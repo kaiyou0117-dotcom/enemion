@@ -303,6 +303,42 @@
 
   .opp-hand-note{ color: var(--ink-dim); font-size: 13px; }
 
+  .dice-area{
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    display:flex;
+    align-items:center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .dice-face{
+    width: 52px; height:52px;
+    border-radius: 6px;
+    border: 1px solid var(--red-glow);
+    background: var(--panel-2);
+    display:flex; align-items:center; justify-content:center;
+    font-family: var(--font-mono);
+    font-size: 24px;
+    color: var(--paper);
+  }
+  .dice-note{ color: var(--ink-dim); font-size: 12px; }
+
+  .field-slot-empty{
+    background: var(--panel);
+    border: 1px dashed var(--edge);
+    border-radius: 4px;
+    padding: 16px;
+    color: var(--ink-dim);
+    font-size: 13px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height: 96px;
+  }
+
   .reveal-board{
     display:grid;
     grid-template-columns: 1fr 1fr;
@@ -459,33 +495,36 @@
           <p class="opp-hand-note" id="opp-hand-note"></p>
         </div>
 
-        <div id="reveal-btn-wrap" class="hidden" style="margin-bottom:20px;">
-          <button class="seal-btn" id="btn-reveal" style="width:auto; padding:12px 22px;">せーの、公開する！</button>
+        <div class="dice-area">
+          <div class="dice-face" id="dice-face">–</div>
+          <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
+          <span class="dice-note" id="dice-note">出目は全員の画面に共有されます（勝敗判定とは独立した機能です）</span>
         </div>
 
-        <div id="reveal-board-wrap" class="hidden">
-          <div class="reveal-board" id="reveal-board"></div>
+        <div class="hand-section">
+          <h3>場</h3>
+          <div class="reveal-board" id="field-board"></div>
+        </div>
 
-          <div class="judge-panel" id="judge-panel">
-            <h3>この番の裁定</h3>
-            <div class="judge-row">
-              <label style="margin:0;">タイプ相性</label>
-              <span id="advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
-            </div>
-            <div class="judge-row">
-              <label style="margin:0;">P1 効果補正</label>
-              <input type="number" id="adj-p1" value="0">
-              <label style="margin:0;">P2 効果補正</label>
-              <input type="number" id="adj-p2" value="0">
-            </div>
-            <div class="judge-row">
-              <label style="margin:0;">獲得ポイント</label>
-              <input type="number" id="award-points" value="1" min="0">
-            </div>
-            <div class="judge-row winner-radios" id="winner-radios"></div>
-            <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する</button>
-            <span class="ready-note" id="confirm-note"></span>
+        <div class="judge-panel hidden" id="judge-panel-wrap">
+          <h3>この番の裁定</h3>
+          <div class="judge-row">
+            <label style="margin:0;">タイプ相性</label>
+            <span id="advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
           </div>
+          <div class="judge-row">
+            <label style="margin:0;">P1 効果補正</label>
+            <input type="number" id="adj-p1" value="0">
+            <label style="margin:0;">P2 効果補正</label>
+            <input type="number" id="adj-p2" value="0">
+          </div>
+          <div class="judge-row">
+            <label style="margin:0;">獲得ポイント</label>
+            <input type="number" id="award-points" value="1" min="0">
+          </div>
+          <div class="judge-row winner-radios" id="winner-radios"></div>
+          <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する</button>
+          <span class="ready-note" id="confirm-note"></span>
         </div>
       </div>
 
@@ -837,7 +876,6 @@
       firstSlot: 'player1',
       points: { player1: 0, player2: 0 },
       picks: { player1: null, player2: null },
-      revealed: false,
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -905,12 +943,10 @@
     const p1Locked = latestBattle.picks && latestBattle.picks.player1 && latestBattle.picks.player1.locked;
     const p2Locked = latestBattle.picks && latestBattle.picks.player2 && latestBattle.picks.player2.locked;
     const bothLocked = p1Locked && p2Locked;
-    const revealed = !!latestBattle.revealed;
 
-    document.getElementById('reveal-btn-wrap').classList.toggle('hidden', !(bothLocked && !revealed));
-    document.getElementById('reveal-board-wrap').classList.toggle('hidden', !revealed);
-
-    if(revealed){ renderRevealBoard(); }
+    renderFieldBoard(p1Locked, p2Locked);
+    document.getElementById('judge-panel-wrap').classList.toggle('hidden', !bothLocked);
+    if(bothLocked){ renderJudgePanel(); }
   }
 
   function memberName(slot){
@@ -931,25 +967,34 @@
   document.getElementById('btn-lock-card').addEventListener('click', async () => {
     if(mySelectedCardIndex === null) return;
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: mySelectedCardIndex, locked: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, text: '手を伏せて確定した。', ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, text: 'カードを場に出した。', ts: Date.now() });
   });
 
-  document.getElementById('btn-reveal').addEventListener('click', async () => {
-    await update(ref(db, `rooms/${roomId}/battle`), { revealed: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from:'卓', text:'両者、公開！', ts: Date.now() });
+  document.getElementById('btn-roll-dice').addEventListener('click', async () => {
+    const value = Math.floor(Math.random() * 4) + 1; // 1d4
+    await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, by: myName, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, text: `1d4を振り、${value}が出た。`, ts: Date.now() });
   });
 
-  function renderRevealBoard(){
-    const board = document.getElementById('reveal-board');
+  function renderFieldBoard(p1Locked, p2Locked){
+    const board = document.getElementById('field-board');
+    const p1Html = p1Locked
+      ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex])
+      : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`;
+    const p2Html = p2Locked
+      ? revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex])
+      : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`;
+    board.innerHTML = p1Html + p2Html;
+
+    const face = document.getElementById('dice-face');
+    face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
+  }
+
+  function renderJudgePanel(){
     const p1Idx = latestBattle.picks.player1.cardIndex;
     const p2Idx = latestBattle.picks.player2.cardIndex;
     const p1Card = latestDecks.player1.cards[p1Idx];
     const p2Card = latestDecks.player2.cards[p2Idx];
-
-    board.innerHTML = [
-      revealCardHtml('player1', p1Card),
-      revealCardHtml('player2', p2Card)
-    ].join('');
 
     const adv = typeAdvantage(p1Card.type, p2Card.type);
     const advNote = document.getElementById('advantage-note');
@@ -1018,7 +1063,6 @@
     }
     updates['battle/points'] = newPoints;
     updates['battle/picks'] = { player1: null, player2: null };
-    updates['battle/revealed'] = false;
     updates['battle/turn'] = latestBattle.turn + 1;
     updates['battle/firstSlot'] = oppSlot(latestBattle.firstSlot);
 
@@ -1053,7 +1097,7 @@
     updates['battle'] = {
       phase:'battle', turn:1, firstSlot:'player1',
       points:{player1:0, player2:0}, picks:{player1:null, player2:null},
-      revealed:false, winner:null
+      winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', text:'同じデッキで再戦を開始。', ts: Date.now() });
