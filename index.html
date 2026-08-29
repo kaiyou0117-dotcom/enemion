@@ -371,6 +371,9 @@
 </head>
 <body>
 
+  <!-- エラー表示バナー（通常は非表示） -->
+  <div id="fatal-error-banner" class="hidden" style="position:fixed; top:0; left:0; right:0; background:#b23a2e; color:#fff; padding:12px 16px; font-family:'JetBrains Mono',monospace; font-size:12px; z-index:9999; white-space:pre-wrap;"></div>
+
   <!-- 入り口画面 -->
   <div id="entry-screen" class="screen">
     <div class="ticket">
@@ -512,6 +515,16 @@
   </div>
 
 <script type="module">
+  // どんなエラーも画面上部の赤いバナーに表示する（サイレント失敗を防ぐため）
+  function showFatalError(label, err){
+    const banner = document.getElementById('fatal-error-banner');
+    banner.classList.remove('hidden');
+    banner.textContent = `[${label}] ${err && err.message ? err.message : err}`;
+    console.error(label, err);
+  }
+  window.addEventListener('error', (e) => showFatalError('script error', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => showFatalError('unhandled promise', e.reason));
+
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
   import {
     getDatabase, ref, set, update, push, onValue,
@@ -529,8 +542,13 @@
     measurementId: "G-XC45Q1N2QP"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+  let app, db;
+  try{
+    app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+  } catch(err){
+    showFatalError('Firebase初期化失敗', err);
+  }
 
   // ------- 状態 -------
   let roomId = null;
@@ -583,41 +601,46 @@
   // ============ 入室処理 ============
   btnEnter.addEventListener('click', async () => {
     entryError.textContent = '';
-    const roomRaw = inputRoom.value.trim();
-    const nameRaw = inputName.value.trim();
-    if(!roomRaw){ entryError.textContent = '合言葉を入力してください。'; return; }
-    if(!nameRaw){ entryError.textContent = '名乗る名を入力してください。'; return; }
+    try{
+      const roomRaw = inputRoom.value.trim();
+      const nameRaw = inputName.value.trim();
+      if(!roomRaw){ entryError.textContent = '合言葉を入力してください。'; return; }
+      if(!nameRaw){ entryError.textContent = '名乗る名を入力してください。'; return; }
 
-    roomId = sanitizeKey(roomRaw);
-    myName = nameRaw;
-    memberId = 'm_' + Math.random().toString(36).slice(2, 10);
+      roomId = sanitizeKey(roomRaw);
+      myName = nameRaw;
+      memberId = 'm_' + Math.random().toString(36).slice(2, 10);
 
-    const membersRef = ref(db, `rooms/${roomId}/members`);
-    const snap = await get(membersRef);
-    const existing = snap.exists() ? snap.val() : {};
+      const membersRef = ref(db, `rooms/${roomId}/members`);
+      const snap = await get(membersRef);
+      const existing = snap.exists() ? snap.val() : {};
 
-    let finalRole = selectedRoleKind;
-    if(selectedRoleKind === 'player'){
-      const takenSlots = Object.values(existing).map(m => m.slot).filter(Boolean);
-      if(!takenSlots.includes('player1')) finalRole = 'player1';
-      else if(!takenSlots.includes('player2')) finalRole = 'player2';
-      else { entryError.textContent = 'プレイヤー枠は既に2人埋まっています。観戦かジャッジで入室してください。'; return; }
-    } else if(selectedRoleKind === 'judge'){
-      const hasJudge = Object.values(existing).some(m => m.slot === 'judge');
-      if(hasJudge){ entryError.textContent = 'この卓には既にジャッジがいます。'; return; }
-      finalRole = 'judge';
-    } else if(selectedRoleKind === 'spectator'){ finalRole = 'spectator'; }
-    else { finalRole = 'watch-only'; }
+      let finalRole = selectedRoleKind;
+      if(selectedRoleKind === 'player'){
+        const takenSlots = Object.values(existing).map(m => m.slot).filter(Boolean);
+        if(!takenSlots.includes('player1')) finalRole = 'player1';
+        else if(!takenSlots.includes('player2')) finalRole = 'player2';
+        else { entryError.textContent = 'プレイヤー枠は既に2人埋まっています。観戦かジャッジで入室してください。'; return; }
+      } else if(selectedRoleKind === 'judge'){
+        const hasJudge = Object.values(existing).some(m => m.slot === 'judge');
+        if(hasJudge){ entryError.textContent = 'この卓には既にジャッジがいます。'; return; }
+        finalRole = 'judge';
+      } else if(selectedRoleKind === 'spectator'){ finalRole = 'spectator'; }
+      else { finalRole = 'watch-only'; }
 
-    myRole = finalRole;
-    const myMemberRef = ref(db, `rooms/${roomId}/members/${memberId}`);
-    await set(myMemberRef, { name: myName, slot: myRole, joinedAt: serverTimestamp() });
-    onDisconnect(myMemberRef).remove();
+      myRole = finalRole;
+      const myMemberRef = ref(db, `rooms/${roomId}/members/${memberId}`);
+      await set(myMemberRef, { name: myName, slot: myRole, joinedAt: serverTimestamp() });
+      onDisconnect(myMemberRef).remove();
 
-    document.getElementById('match-room-code').textContent = roomRaw;
-    document.getElementById('play-room-code').textContent = `合言葉: ${roomRaw}`;
+      document.getElementById('match-room-code').textContent = roomRaw;
+      document.getElementById('play-room-code').textContent = `合言葉: ${roomRaw}`;
 
-    initRoomListeners();
+      initRoomListeners();
+    } catch(err){
+      entryError.textContent = `入室に失敗しました: ${err.message || err}`;
+      showFatalError('入室処理', err);
+    }
   });
 
   // ============ リアルタイム購読の初期化 ============
