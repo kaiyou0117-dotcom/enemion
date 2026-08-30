@@ -153,8 +153,8 @@
         dsEditorEffects[idx] = dsEditorEffects[idx].filter(n => n !== name);
         renderDsEditor();
       },
-      onNumberChange: (idx, value) => {
-        dsEditorCards[idx].number = value;
+      onImageChange: (idx, dataUrl) => {
+        dsEditorCards[idx].image = dataUrl;
         renderDsEditor();
       }
     });
@@ -181,6 +181,7 @@
         type: get2('type'),
         effectNames: (dsEditorEffects[idx] || []).slice(),
         flavor: get2('flavor'),
+        image: dsEditorCards[idx] ? (dsEditorCards[idx].image || null) : null,
         used: false
       };
     });

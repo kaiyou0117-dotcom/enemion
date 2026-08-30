@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>エネミオン 対戦サイト</title>
+<title>エネミオン 対戦卓</title>
 <meta property="og:type" content="website">
 <meta property="og:title" content="対戦卓｜エネミオン">
 <meta property="og:description" content="合言葉を入力して入室し、リアルタイムで対戦・観戦・ジャッジができるエネミオンの対戦卓です。">
@@ -34,6 +34,12 @@
 
       <label for="input-name">名乗る名（表示名）</label>
       <input type="text" id="input-name" placeholder="例：名無しの異能者" autocomplete="off">
+
+      <label>プレイヤー画像（任意）</label>
+      <div class="avatar-upload-row">
+        <img class="avatar-preview-large" id="avatar-preview" style="display:none;">
+        <input type="file" accept="image/*" id="input-avatar">
+      </div>
 
       <label>モード</label>
       <div class="role-grid">
@@ -206,6 +212,21 @@
     });
   });
 
+  let myAvatarDataUrl = null;
+  const inputAvatar = document.getElementById('input-avatar');
+  const avatarPreview = document.getElementById('avatar-preview');
+  inputAvatar.addEventListener('change', async () => {
+    const file = inputAvatar.files && inputAvatar.files[0];
+    if(!file) return;
+    try{
+      myAvatarDataUrl = await resizeImageToDataUrl(file, 128, 0.75);
+      avatarPreview.src = myAvatarDataUrl;
+      avatarPreview.style.display = '';
+    } catch(err){
+      entryError.textContent = '画像の読み込みに失敗しました。';
+    }
+  });
+
   function roleDisplay(slot){
     return {
       player1: 'プレイヤー1', player2: 'プレイヤー2',
@@ -255,7 +276,7 @@
 
       myRole = finalRole;
       const myMemberRef = ref(db, `rooms/${roomId}/members/${memberId}`);
-      await set(myMemberRef, { name: myName, slot: myRole, joinedAt: serverTimestamp() });
+      await set(myMemberRef, { name: myName, slot: myRole, avatar: myAvatarDataUrl || null, joinedAt: serverTimestamp() });
       onDisconnect(myMemberRef).remove();
 
       document.getElementById('match-room-code').textContent = roomRaw;
@@ -302,7 +323,8 @@
         const div = document.createElement('div');
         div.className = 'log-item';
         const color = roleLogColor(item.role);
-        div.innerHTML = `<span class="log-meta" style="color:${color};">${escapeHtml(item.from)}</span>${escapeHtml(item.text)}`;
+        const avatarHtml = item.avatar ? `<img class="log-meta-avatar" src="${item.avatar}" alt="">` : '';
+        div.innerHTML = `${avatarHtml}<span class="log-meta" style="color:${color};">${escapeHtml(item.from)}</span>${escapeHtml(item.text)}`;
         logList.appendChild(div);
       });
       logList.scrollTop = logList.scrollHeight;
@@ -317,7 +339,8 @@
     Object.values(data).sort((a,b) => (a.slot > b.slot ? 1 : -1)).forEach(m => {
       const div = document.createElement('div');
       div.className = 'member-card';
-      div.innerHTML = `<div class="role-label">${roleDisplay(m.slot)}</div><div class="member-name">${escapeHtml(m.name)}</div>`;
+      const avatarHtml = m.avatar ? `<img class="avatar-thumb" src="${m.avatar}" alt="">` : '';
+      div.innerHTML = `<div class="role-label">${roleDisplay(m.slot)}</div><div class="member-name">${avatarHtml}${escapeHtml(m.name)}</div>`;
       target.appendChild(div);
     });
   }
@@ -369,6 +392,10 @@
       onAddEffect: (idx, name) => addEffectToCard(idx, name),
       onRemoveEffect: (idx, name) => {
         pendingEffects[idx] = pendingEffects[idx].filter(n => n !== name);
+        renderBuildPhase();
+      },
+      onImageChange: (idx, dataUrl) => {
+        latestDecks[myRole].cards[idx].image = dataUrl;
         renderBuildPhase();
       }
     });
@@ -444,6 +471,7 @@
     const grid = document.getElementById('deck-grid');
     const deckErr = document.getElementById('deck-error');
     deckErr.textContent = '';
+    const myDeck = latestDecks[myRole] || emptyDeck();
     const cards = [0,1,2,3].map(idx => {
       const get = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
       return {
@@ -453,6 +481,7 @@
         type: get('type'),
         effectNames: (pendingEffects[idx] || []).slice(),
         flavor: get('flavor'),
+        image: myDeck.cards[idx] ? (myDeck.cards[idx].image || null) : null,
         used: false
       };
     });
@@ -532,7 +561,8 @@
         const div = document.createElement('div');
         const isChosenThisTurn = myPick && myPick.locked && myPick.cardIndex === idx;
         div.className = 'hand-card' + (isChosenThisTurn ? ' selected' : '');
-        div.innerHTML = `<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
+        const thumb = card.image ? `<img src="${card.image}" alt="" style="width:100%; height:40px; object-fit:cover; border-radius:3px; margin-bottom:4px;">` : '';
+        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
         myHand.appendChild(div);
       });
       const canRoll = !(myPick && myPick.locked);
@@ -577,13 +607,13 @@
     const roll = Math.floor(Math.random()*4) + 1; // 1d4
     const cardIndex = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex, locked: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `1d4を振り、${roll}の目で数字${myDeck.cards[cardIndex].number}のカードを場に出した。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `1d4を振り、${roll}の目で数字${myDeck.cards[cardIndex].number}のカードを場に出した。`, ts: Date.now() });
   });
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
     const value = Math.floor(Math.random() * 4) + 1; // 1d4
     await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, by: myName, ts: Date.now() });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `1d4を振り、${value}が出た。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `1d4を振り、${value}が出た。`, ts: Date.now() });
   });
 
   function renderFieldBoard(p1Locked, p2Locked){
@@ -647,9 +677,11 @@
       if(!e) return '';
       return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
+    const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
     return `
       <div class="reveal-card">
         <div class="rc-side">${escapeHtml(memberName(slot))}</div>
+        ${imageHtml}
         <div class="rc-name">${escapeHtml(card.name)}</div>
         <div class="rc-num">${card.number}</div>
         <div class="rc-meta">${escapeHtml(card.species)} ／ ${TYPE_LABEL[card.type]}</div>
@@ -731,7 +763,7 @@
     const inputLog = document.getElementById('input-log');
     const text = inputLog.value.trim();
     if(!text) return;
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text, ts: Date.now() });
     inputLog.value = '';
   }
 </script>

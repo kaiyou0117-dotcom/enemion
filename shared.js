@@ -48,8 +48,35 @@ export function escapeHtml(str){
     return div.innerHTML;
   }
 
+// 端末から選んだ画像ファイルを、リアルタイムDBに収まるサイズまで縮小してdata URL化する
+export function resizeImageToDataUrl(file, maxDim = 160, quality = 0.7){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('画像の読み込みに失敗しました。'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('画像の読み込みに失敗しました。'));
+        img.onload = () => {
+          let { width, height } = img;
+          if(width > height){
+            if(width > maxDim){ height = Math.round(height * (maxDim/width)); width = maxDim; }
+          } else {
+            if(height > maxDim){ width = Math.round(width * (maxDim/height)); height = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
 export function emptyCards(){
-    return [0,1,2,3].map((_, idx) => ({ name:'', number: idx+1, species:'異能者', type:'atk', effectNames:[], flavor:'', used:false }));
+    return [0,1,2,3].map((_, idx) => ({ name:'', number: idx+1, species:'異能者', type:'atk', effectNames:[], flavor:'', image:null, used:false }));
   }
 export function emptyDeck(){
     return { ready:false, cards: emptyCards() };
@@ -94,6 +121,16 @@ export function cardFormHtml(idx, card, effectsArr, isReadOnly){
 
     return `
       <div class="slot-label">数字 ${cardNumber}</div>
+      <div class="card-image-row">
+        <div class="card-image-preview" data-image-preview data-i="${idx}">${card.image ? `<img src="${card.image}" alt="">` : '画像なし'}</div>
+        ${isReadOnly ? '' : `
+          <div>
+            <label>カード画像</label>
+            <input type="file" accept="image/*" data-image-input data-i="${idx}">
+            ${card.image ? `<button type="button" class="ghost-btn" data-remove-image data-i="${idx}">画像を外す</button>` : ''}
+          </div>
+        `}
+      </div>
       <label>カード名</label>
       <input type="text" data-f="name" data-i="${idx}" value="${escapeHtml(card.name)}" ${isReadOnly?'disabled':''}>
       <label>種族</label>
@@ -129,6 +166,25 @@ export function renderCardGrid(gridEl, cards, effectsState, isReadOnly, callback
       div.className = 'card-form';
       div.innerHTML = cardFormHtml(idx, card, effectsState[idx] || [], isReadOnly);
       gridEl.appendChild(div);
+    });
+    gridEl.querySelectorAll('[data-image-input]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const idx = parseInt(input.dataset.i, 10);
+        const file = input.files && input.files[0];
+        if(!file || !callbacks.onImageChange) return;
+        try{
+          const dataUrl = await resizeImageToDataUrl(file);
+          callbacks.onImageChange(idx, dataUrl);
+        } catch(err){
+          console.error('画像処理に失敗しました', err);
+        }
+      });
+    });
+    gridEl.querySelectorAll('[data-remove-image]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.i, 10);
+        if(callbacks.onImageChange) callbacks.onImageChange(idx, null);
+      });
     });
     gridEl.querySelectorAll('[data-add-effect]').forEach(btn => {
       btn.addEventListener('click', () => {

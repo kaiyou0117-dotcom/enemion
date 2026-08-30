@@ -445,3 +445,56 @@
   background: linear-gradient(180deg, rgba(178,58,46,0.2), rgba(178,58,46,0.05));
 }
 body{ padding-top: 48px; }
+
+/* ---- 画像アップロード（カード・プレイヤー） ---- */
+.card-image-row{
+  display:flex;
+  gap: 10px;
+  align-items:flex-start;
+  margin-bottom: 12px;
+}
+.card-image-preview{
+  width: 64px; height: 64px;
+  flex-shrink: 0;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel-2);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+  font-size: 10px;
+  color: var(--ink-dim);
+  text-align:center;
+}
+.card-image-preview img{ width:100%; height:100%; object-fit:cover; }
+.card-image-row input[type="file"]{
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-bottom: 6px;
+}
+
+.avatar-thumb{
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--edge);
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.member-card .member-name{ display:flex; align-items:center; gap:6px; }
+.log-meta-avatar{
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 4px;
+  border: 1px solid var(--edge);
+}
+
+.avatar-upload-row{ display:flex; align-items:center; gap: 10px; margin-bottom: 14px; }
+.avatar-preview-large{
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: var(--panel-2);
+  object-fit: cover;
+}
