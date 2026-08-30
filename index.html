@@ -229,6 +229,16 @@
   const btnEnter = document.getElementById('btn-enter');
   const roleButtons = document.querySelectorAll('.role-btn');
 
+  // ---- 状態 ----
+  let roomId = null;
+  let memberId = null;
+  let myRole = null;
+  let myName = null;
+  let listenersReady = false;
+  let latestMembers = {};
+  let latestDecks = {};
+  let latestBattle = null;
+
   let selectedRoleKind = 'player';
   roleButtons.forEach(btn => {
     btn.addEventListener('click', () => {
