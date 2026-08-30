@@ -505,6 +505,8 @@
     pendingEffects = deck.cards.map(c => (c.effectNames||[]).slice());
     document.getElementById('load-deckset-panel').classList.add('hidden');
     document.getElementById('deck-error').textContent = 'デッキセットから読み込みました。内容を確認して「デッキを保存」を押してください。';
+    // 画面に残っている古い入力内容で上書きされないよう、先にグリッドを空にしてから再描画する
+    document.getElementById('deck-grid').innerHTML = '';
     renderBuildPhase();
   }
 
