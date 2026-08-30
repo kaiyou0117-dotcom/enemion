@@ -59,7 +59,7 @@
     db, ref, set, push, get, remove,
     escapeHtml, sanitizeKey, emptyCards,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide
+    addEffectGeneric, validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
 
   // ============ デッキセット機能 ============
@@ -143,6 +143,7 @@
 
   function renderDsEditor(){
     const grid = document.getElementById('deckset-grid');
+    syncCardFieldsFromDom(grid, dsEditorCards);
     renderCardGrid(grid, dsEditorCards, dsEditorEffects, false, {
       onAddEffect: (idx, name) => {
         const err = document.getElementById('deckset-error');

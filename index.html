@@ -189,7 +189,8 @@
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
     sanitizeKey, escapeHtml, emptyDeck, emptyCards, effectByName,
     ptGroupLabel, buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide, typeAdvantage, showFatalError
+    addEffectGeneric, validateDeckWide, typeAdvantage, showFatalError,
+    syncCardFieldsFromDom
   } from './shared.js';
 
   // ---- DOM refs ----
@@ -387,6 +388,8 @@
     if(!pendingEffects){
       pendingEffects = myDeck.cards.map(c => (c.effectNames || []).slice());
     }
+
+    syncCardFieldsFromDom(grid, myDeck.cards);
 
     renderCardGrid(grid, myDeck.cards, pendingEffects, isReady, {
       onAddEffect: (idx, name) => addEffectToCard(idx, name),
