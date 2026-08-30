@@ -57,7 +57,8 @@
           <h3>あなたの手札</h3>
           <div class="hand-cards" id="solo-my-hand"></div>
           <div style="margin-top:10px;">
-            <button class="ghost-btn" id="btn-solo-play" disabled>この手を出す</button>
+            <button class="ghost-btn" id="btn-solo-play">1d4を振ってカードを出す</button>
+            <span class="ready-note" id="solo-roll-status"></span>
           </div>
         </div>
 
@@ -115,7 +116,6 @@
   let oppDeck = null;
   let points = { me: 0, opp: 0 };
   let turn = 1;
-  let mySelectedIndex = null;
   let currentField = null; // { myIdx, oppIdx } このターンの公開カード（確定前）
 
   document.getElementById('btn-solo-load').addEventListener('click', async () => {
@@ -187,7 +187,6 @@
     oppDeck = generateOpponentDeck();
     points = { me:0, opp:0 };
     turn = 1;
-    mySelectedIndex = null;
     currentField = null;
 
     document.getElementById('solo-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
@@ -218,15 +217,16 @@
     myDeck.forEach((card, idx) => {
       const div = document.createElement('div');
       const isUsed = card.used;
-      const isSelected = mySelectedIndex === idx;
-      div.className = 'hand-card' + (isUsed ? ' used' : '') + (isSelected ? ' selected' : '');
+      const isChosenThisTurn = currentField && currentField.myIdx === idx;
+      div.className = 'hand-card' + (isUsed ? ' used' : '') + (isChosenThisTurn ? ' selected' : '');
       div.innerHTML = `<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
-      if(!isUsed && !currentField){
-        div.addEventListener('click', () => { mySelectedIndex = idx; renderSoloBattle(); });
-      }
       hand.appendChild(div);
     });
-    document.getElementById('btn-solo-play').disabled = (mySelectedIndex === null) || !!currentField;
+    const canRoll = !currentField && myDeck.some(c => !c.used);
+    document.getElementById('btn-solo-play').disabled = !canRoll;
+    document.getElementById('solo-roll-status').textContent = currentField
+      ? `1d4で数字${myDeck[currentField.myIdx].number}が出て、そのカードを場に出しました。`
+      : '';
 
     const board = document.getElementById('solo-field-board');
     if(currentField){
@@ -234,7 +234,7 @@
       document.getElementById('solo-judge-panel').classList.remove('hidden');
       renderSoloJudgePanel();
     } else {
-      board.innerHTML = '<div class="field-slot-empty">カードを選んで「この手を出す」を押してください</div>';
+      board.innerHTML = '<div class="field-slot-empty">「1d4を振ってカードを出す」を押してください</div>';
       document.getElementById('solo-judge-panel').classList.add('hidden');
     }
   }
@@ -257,10 +257,21 @@
   }
 
   document.getElementById('btn-solo-play').addEventListener('click', () => {
-    if(mySelectedIndex === null) return;
+    const availableMine = myDeck.map((c,i)=>i).filter(i => !myDeck[i].used);
+    if(availableMine.length === 0) return;
+    let roll, myIdx;
+    let attempts = 0;
+    do{
+      roll = Math.floor(Math.random()*4) + 1; // 1d4
+      myIdx = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
+      attempts++;
+    } while(myDeck[myIdx].used && attempts < 50);
+    if(myDeck[myIdx].used){
+      myIdx = availableMine[0];
+    }
     const availableOpp = oppDeck.map((c,i)=>i).filter(i => !oppDeck[i].used);
     const oppIdx = randomChoice(availableOpp);
-    currentField = { myIdx: mySelectedIndex, oppIdx };
+    currentField = { myIdx, oppIdx };
     renderSoloBattle();
   });
 
@@ -302,7 +313,6 @@
     if(winner === 'me') points.me += award;
     if(winner === 'opp') points.opp += award;
 
-    mySelectedIndex = null;
     currentField = null;
     turn += 1;
 
@@ -326,7 +336,6 @@
     oppDeck = generateOpponentDeck();
     points = { me:0, opp:0 };
     turn = 1;
-    mySelectedIndex = null;
     currentField = null;
     document.getElementById('solo-phase-result').classList.add('hidden');
     document.getElementById('solo-phase-battle').classList.remove('hidden');
