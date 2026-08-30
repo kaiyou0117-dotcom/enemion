@@ -350,12 +350,6 @@
   // ---- 部屋内の編成フェーズ ----
   let pendingEffects = null; // [[名前,...], ...] 4枚分。ローカル編集用の作業コピー
 
-  function getCardNumberFromDom(idx){
-    const grid = document.getElementById('deck-grid');
-    const el = grid.querySelector(`[data-f="number"][data-i="${idx}"]`);
-    return el && el.value ? parseInt(el.value, 10) : null;
-  }
-
   function renderBuildPhase(){
     if(myRole !== 'player1' && myRole !== 'player2') return; // 編成できるのはプレイヤーのみ
     const grid = document.getElementById('deck-grid');
@@ -371,10 +365,6 @@
       onRemoveEffect: (idx, name) => {
         pendingEffects[idx] = pendingEffects[idx].filter(n => n !== name);
         renderBuildPhase();
-      },
-      onNumberChange: (idx, value) => {
-        latestDecks[myRole].cards[idx].number = value;
-        renderBuildPhase();
       }
     });
 
@@ -384,7 +374,7 @@
 
   function addEffectToCard(idx, name){
     const deckErr = document.getElementById('deck-error');
-    const cardNumber = getCardNumberFromDom(idx);
+    const cardNumber = idx + 1; // 数字はカード枠に固定
     if(addEffectGeneric(pendingEffects, idx, name, cardNumber, deckErr)){
       renderBuildPhase();
     }
@@ -453,7 +443,7 @@
       const get = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
       return {
         name: get('name').trim(),
-        number: get('number') ? parseInt(get('number'),10) : null,
+        number: idx + 1,
         species: get('species'),
         type: get('type'),
         effectNames: (pendingEffects[idx] || []).slice(),
@@ -461,9 +451,6 @@
         used: false
       };
     });
-    const numbers = cards.map(c => c.number);
-    const validNumbers = [1,2,3,4].every(n => numbers.includes(n));
-    if(!validNumbers){ deckErr.textContent = '数字は1〜4を重複なく1つずつ割り振ってください。'; return; }
     if(cards.some(c => !c.name)){ deckErr.textContent = '全てのカードにカード名を入力してください。'; return; }
 
     const wideError = validateDeckWide(cards);
@@ -476,7 +463,7 @@
   document.getElementById('btn-deck-ready').addEventListener('click', async () => {
     const myDeck = latestDecks[myRole] || emptyDeck();
     const newReady = !myDeck.ready;
-    if(newReady && (!myDeck.cards || myDeck.cards.some(c => !c.name || !c.number))){
+    if(newReady && (!myDeck.cards || myDeck.cards.some(c => !c.name))){
       document.getElementById('deck-error').textContent = '先にデッキを保存してください（全カード入力必須）。';
       return;
     }

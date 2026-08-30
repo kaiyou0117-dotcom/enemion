@@ -65,9 +65,7 @@
   let dsEditingId = null; // null=新規, それ以外=既存デッキの更新
 
   function getDsCardNumberFromDom(idx){
-    const grid = document.getElementById('deckset-grid');
-    const el = grid.querySelector(`[data-f="number"][data-i="${idx}"]`);
-    return el && el.value ? parseInt(el.value, 10) : null;
+    return idx + 1; // 数字はカード枠に固定
   }
 
   document.getElementById('btn-ds-load').addEventListener('click', async () => {
@@ -173,7 +171,7 @@
       const get2 = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
       return {
         name: get2('name').trim(),
-        number: get2('number') ? parseInt(get2('number'),10) : null,
+        number: idx + 1,
         species: get2('species'),
         type: get2('type'),
         effectNames: (dsEditorEffects[idx] || []).slice(),
@@ -181,8 +179,6 @@
         used: false
       };
     });
-    const numbers = cards.map(c => c.number);
-    if(![1,2,3,4].every(n => numbers.includes(n))){ err.textContent = '数字は1〜4を重複なく1つずつ割り振ってください。'; return; }
     if(cards.some(c => !c.name)){ err.textContent = '全てのカードにカード名を入力してください。'; return; }
     const wideError = validateDeckWide(cards);
     if(wideError){ err.textContent = wideError; return; }

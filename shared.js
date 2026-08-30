@@ -49,7 +49,7 @@ export function escapeHtml(str){
   }
 
 export function emptyCards(){
-    return [0,1,2,3].map(() => ({ name:'', number:null, species:'異能者', type:'atk', effectNames:[], flavor:'', used:false }));
+    return [0,1,2,3].map((_, idx) => ({ name:'', number: idx+1, species:'異能者', type:'atk', effectNames:[], flavor:'', used:false }));
   }
 export function emptyDeck(){
     return { ready:false, cards: emptyCards() };
@@ -75,7 +75,7 @@ export function buildEffectSelectOptions(){
 export function cardFormHtml(idx, card, effectsArr, isReadOnly){
     const used = effectsArr.reduce((sum, n) => { const e = effectByName(n); return sum + (e ? e.pt : 0); }, 0);
     const cardNumber = card.number;
-    const overBudget = cardNumber !== null && used > cardNumber;
+    const overBudget = used > cardNumber;
 
     const chipsHtml = effectsArr.map(n => {
       const e = effectByName(n);
@@ -93,31 +93,20 @@ export function cardFormHtml(idx, card, effectsArr, isReadOnly){
     }).join('');
 
     return `
-      <div class="slot-label">カード ${idx+1}</div>
+      <div class="slot-label">数字 ${cardNumber}</div>
       <label>カード名</label>
       <input type="text" data-f="name" data-i="${idx}" value="${escapeHtml(card.name)}" ${isReadOnly?'disabled':''}>
-      <div class="row2">
-        <div>
-          <label>数字(1-4)</label>
-          <select data-f="number" data-i="${idx}" ${isReadOnly?'disabled':''}>
-            <option value="">-</option>
-            ${[1,2,3,4].map(n => `<option value="${n}" ${card.number===n?'selected':''}>${n}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>種族</label>
-          <select data-f="species" data-i="${idx}" ${isReadOnly?'disabled':''}>
-            ${SPECIES_LIST.map(s => `<option value="${s}" ${card.species===s?'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
+      <label>種族</label>
+      <select data-f="species" data-i="${idx}" ${isReadOnly?'disabled':''}>
+        ${SPECIES_LIST.map(s => `<option value="${s}" ${card.species===s?'selected':''}>${s}</option>`).join('')}
+      </select>
       <label>タイプ</label>
       <select data-f="type" data-i="${idx}" ${isReadOnly?'disabled':''}>
         ${Object.entries(TYPE_LABEL).map(([k,v]) => `<option value="${k}" ${card.type===k?'selected':''}>${v}</option>`).join('')}
       </select>
 
       <label>効果</label>
-      <div class="pt-budget ${overBudget?'over':''}">使用pt: ${used} ／ 数字上限: ${cardNumber ?? '未設定'}${overBudget ? '（超過しています）' : ''}</div>
+      <div class="pt-budget ${overBudget?'over':''}">使用pt: ${used} ／ 数字上限: ${cardNumber}${overBudget ? '（超過しています）' : ''}</div>
       ${chipsHtml}
       ${isReadOnly ? '' : `
         <div class="effect-add-row">
@@ -153,11 +142,6 @@ export function renderCardGrid(gridEl, cards, effectsState, isReadOnly, callback
         callbacks.onRemoveEffect(parseInt(btn.dataset.i, 10), btn.dataset.name);
       });
     });
-    gridEl.querySelectorAll('[data-f="number"]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        callbacks.onNumberChange(parseInt(sel.dataset.i, 10), sel.value ? parseInt(sel.value, 10) : null);
-      });
-    });
   }
 export function addEffectGeneric(effectsState, idx, name, cardNumber, errEl){
     errEl.textContent = '';
@@ -168,7 +152,7 @@ export function addEffectGeneric(effectsState, idx, name, cardNumber, errEl){
     if(effects.includes(name)){ errEl.textContent = '同じ効果は同じカードに重複してつけられません。'; return false; }
     if(effects.length >= 5){ errEl.textContent = '1枚のカードにつけられる効果は5個までです。'; return false; }
     const currentUsed = effects.reduce((sum, n) => { const e = effectByName(n); return sum + (e ? e.pt : 0); }, 0);
-    if(cardNumber !== null && (currentUsed + eff.pt) > cardNumber){
+    if((currentUsed + eff.pt) > cardNumber){
       errEl.textContent = `pt上限を超えています（このカードの上限: ${cardNumber}pt）。`;
       return false;
     }
@@ -191,7 +175,7 @@ export function addEffectGeneric(effectsState, idx, name, cardNumber, errEl){
 export function validateDeckWide(cards){
     for(const c of cards){
       const used = (c.effectNames||[]).reduce((sum,n) => { const e = effectByName(n); return sum + (e?e.pt:0); }, 0);
-      if(c.number !== null && used > c.number){
+      if(used > c.number){
         return `「${c.name || '無題のカード'}」の効果ptが数字の上限を超えています。`;
       }
       if((c.effectNames||[]).length > 5){
