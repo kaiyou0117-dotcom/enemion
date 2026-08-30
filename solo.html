@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>エネミオン ひとりで</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="fatal-error-banner" class="hidden" style="position:fixed; top:0; left:0; right:0; background:#b23a2e; color:#fff; padding:12px 16px; font-family:'JetBrains Mono',monospace; font-size:12px; z-index:9999; white-space:pre-wrap;"></div>
+
+  <nav class="top-nav">
+    <a href="index.html">対戦</a>
+    <a href="deckset.html">デッキセット</a>
+    <a href="solo.html" class="active">ひとりで</a>
+  </nav>
+
+  <!-- デッキ選択画面 -->
+  <div id="select-screen" class="screen">
+    <div class="ticket">
+      <h1 class="title">ひとりで練習</h1>
+      <div class="ready-note" style="margin-bottom:16px;">保存したデッキセットの中から1つを使い、ランダムに手を出してくる仮想の相手と練習対戦します。</div>
+
+      <label for="input-solo-name">名前（デッキセットの本人確認）</label>
+      <input type="text" id="input-solo-name" placeholder="デッキセットに登録した名前">
+      <button class="seal-btn" id="btn-solo-load" style="width:auto; padding:12px 22px;">デッキを呼び出す</button>
+
+      <div id="solo-deck-list" style="margin-top:18px;"></div>
+    </div>
+  </div>
+
+  <!-- 対戦画面 -->
+  <div id="solo-battle-screen" class="screen hidden">
+    <div class="wrap">
+      <div class="wrap-head">
+        <h2>ひとりで練習</h2>
+        <span class="room-code" id="solo-deck-label"></span>
+      </div>
+
+      <div id="solo-phase-battle">
+        <div class="score-bar">
+          <div class="score-side">
+            <div class="side-name">あなた</div>
+            <div class="pips" id="solo-pips-me"></div>
+          </div>
+          <div class="turn-mid" id="solo-turn-indicator"></div>
+          <div class="score-side">
+            <div class="side-name">仮想の相手</div>
+            <div class="pips" id="solo-pips-opp"></div>
+          </div>
+        </div>
+
+        <div class="hand-section">
+          <h3>あなたの手札</h3>
+          <div class="hand-cards" id="solo-my-hand"></div>
+          <div style="margin-top:10px;">
+            <button class="ghost-btn" id="btn-solo-play" disabled>この手を出す</button>
+          </div>
+        </div>
+
+        <div class="hand-section">
+          <h3>場</h3>
+          <div class="reveal-board" id="solo-field-board"></div>
+        </div>
+
+        <div class="judge-panel hidden" id="solo-judge-panel">
+          <h3>この番の結果</h3>
+          <div class="judge-row">
+            <label style="margin:0;">タイプ相性</label>
+            <span id="solo-advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
+          </div>
+          <div class="judge-row">
+            <label style="margin:0;">あなたの効果補正</label>
+            <input type="number" id="solo-adj-me" value="0">
+            <label style="margin:0;">相手の効果補正</label>
+            <input type="number" id="solo-adj-opp" value="0">
+          </div>
+          <div class="judge-row">
+            <label style="margin:0;">獲得ポイント</label>
+            <input type="number" id="solo-award-points" value="1" min="0">
+          </div>
+          <div class="judge-row winner-radios" id="solo-winner-radios"></div>
+          <button class="ghost-btn" id="btn-solo-confirm-round">この番を確定する</button>
+        </div>
+      </div>
+
+      <div id="solo-phase-result" class="hidden">
+        <div class="result-banner">
+          <div class="rb-title" id="solo-result-title"></div>
+          <div class="ready-note" id="solo-result-sub"></div>
+          <div class="result-actions">
+            <button class="ghost-btn" id="btn-solo-rematch">同じデッキでもう一度</button>
+            <button class="ghost-btn" id="btn-solo-back">デッキを選び直す</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+  import {
+    db, ref, get,
+    TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
+    sanitizeKey, escapeHtml, effectByName,
+    addEffectGeneric, typeAdvantage
+  } from './shared.js';
+
+  const selectScreen = document.getElementById('select-screen');
+  const battleScreen = document.getElementById('solo-battle-screen');
+
+  let myDeck = null;
+  let oppDeck = null;
+  let points = { me: 0, opp: 0 };
+  let turn = 1;
+  let mySelectedIndex = null;
+  let currentField = null; // { myIdx, oppIdx } このターンの公開カード（確定前）
+
+  document.getElementById('btn-solo-load').addEventListener('click', async () => {
+    const nameRaw = document.getElementById('input-solo-name').value.trim();
+    const listEl = document.getElementById('solo-deck-list');
+    if(!nameRaw){ listEl.innerHTML = '<p class="ready-note">名前を入力してください。</p>'; return; }
+    const nameKey = sanitizeKey(nameRaw);
+    listEl.innerHTML = '読み込み中…';
+    try{
+      const snap = await get(ref(db, `deckSets/${nameKey}/decks`));
+      const data = snap.exists() ? snap.val() : {};
+      const entries = Object.entries(data);
+      if(entries.length === 0){
+        listEl.innerHTML = '<p class="ready-note">この名前で保存されたデッキが見つかりません。先に「デッキセット」ページでデッキを作成してください。</p>';
+        return;
+      }
+      listEl.innerHTML = '';
+      entries.forEach(([id, deck]) => {
+        const div = document.createElement('div');
+        div.className = 'member-card';
+        div.style.marginBottom = '8px';
+        const cardNames = (deck.cards||[]).map(c => c.name || '無題').join('／');
+        div.innerHTML = `
+          <div class="role-label">${escapeHtml(deck.label || '無題のデッキ')}</div>
+          <div class="member-name">${escapeHtml(cardNames)}</div>
+          <button type="button" class="ghost-btn" data-solo-use="${id}" style="margin-top:8px;">このデッキで練習する</button>
+        `;
+        listEl.appendChild(div);
+      });
+      listEl.querySelectorAll('[data-solo-use]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const deck = data[btn.dataset.soloUse];
+          startSoloBattle(deck);
+        });
+      });
+    } catch(err){
+      listEl.innerHTML = `<p class="ready-note">読み込みに失敗しました: ${escapeHtml(err.message||String(err))}</p>`;
+    }
+  });
+
+  function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+  function generateOpponentDeck(){
+    const names = ['幻影の一撃', '朧げな影', '模擬戦の亡霊', '練習用データ'];
+    const numbers = [1,2,3,4].sort(() => Math.random()-0.5);
+    const cards = numbers.map((num, i) => ({
+      name: names[i],
+      number: num,
+      species: randomChoice(SPECIES_LIST),
+      type: randomChoice(Object.keys(TYPE_LABEL)),
+      effectNames: [],
+      flavor: '',
+      used: false
+    }));
+    const effectsState = [[],[],[],[]];
+    cards.forEach((card, idx) => {
+      const attempts = Math.floor(Math.random()*3); // 0〜2個
+      for(let a=0; a<attempts; a++){
+        const candidate = randomChoice(EFFECTS_CATALOG);
+        addEffectGeneric(effectsState, idx, candidate.name, card.number, { set textContent(v){} });
+      }
+    });
+    cards.forEach((card, idx) => { card.effectNames = effectsState[idx]; });
+    return cards;
+  }
+
+  function startSoloBattle(deck){
+    myDeck = JSON.parse(JSON.stringify(deck.cards)).map(c => ({...c, used:false}));
+    oppDeck = generateOpponentDeck();
+    points = { me:0, opp:0 };
+    turn = 1;
+    mySelectedIndex = null;
+    currentField = null;
+
+    document.getElementById('solo-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
+    selectScreen.classList.add('hidden');
+    battleScreen.classList.remove('hidden');
+    document.getElementById('solo-phase-battle').classList.remove('hidden');
+    document.getElementById('solo-phase-result').classList.add('hidden');
+    renderSoloBattle();
+  }
+
+  function renderPips(id, pt){
+    const el = document.getElementById(id);
+    el.innerHTML = '';
+    for(let i=0;i<3;i++){
+      const span = document.createElement('span');
+      span.className = 'pip' + (i < pt ? ' filled' : '');
+      el.appendChild(span);
+    }
+  }
+
+  function renderSoloBattle(){
+    renderPips('solo-pips-me', points.me);
+    renderPips('solo-pips-opp', points.opp);
+    document.getElementById('solo-turn-indicator').textContent = `第${turn}ターン`;
+
+    const hand = document.getElementById('solo-my-hand');
+    hand.innerHTML = '';
+    myDeck.forEach((card, idx) => {
+      const div = document.createElement('div');
+      const isUsed = card.used;
+      const isSelected = mySelectedIndex === idx;
+      div.className = 'hand-card' + (isUsed ? ' used' : '') + (isSelected ? ' selected' : '');
+      div.innerHTML = `<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
+      if(!isUsed && !currentField){
+        div.addEventListener('click', () => { mySelectedIndex = idx; renderSoloBattle(); });
+      }
+      hand.appendChild(div);
+    });
+    document.getElementById('btn-solo-play').disabled = (mySelectedIndex === null) || !!currentField;
+
+    const board = document.getElementById('solo-field-board');
+    if(currentField){
+      board.innerHTML = revealCardHtml('あなた', myDeck[currentField.myIdx]) + revealCardHtml('仮想の相手', oppDeck[currentField.oppIdx]);
+      document.getElementById('solo-judge-panel').classList.remove('hidden');
+      renderSoloJudgePanel();
+    } else {
+      board.innerHTML = '<div class="field-slot-empty">カードを選んで「この手を出す」を押してください</div>';
+      document.getElementById('solo-judge-panel').classList.add('hidden');
+    }
+  }
+
+  function revealCardHtml(sideName, card){
+    const effectsHtml = (card.effectNames || []).map(n => {
+      const e = effectByName(n);
+      if(!e) return '';
+      return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
+    }).join('');
+    return `
+      <div class="reveal-card">
+        <div class="rc-side">${escapeHtml(sideName)}</div>
+        <div class="rc-name">${escapeHtml(card.name)}</div>
+        <div class="rc-num">${card.number}</div>
+        <div class="rc-meta">${escapeHtml(card.species)} ／ ${TYPE_LABEL[card.type]}</div>
+        ${effectsHtml ? `<div class="rc-effects">${effectsHtml}</div>` : ''}
+      </div>
+    `;
+  }
+
+  document.getElementById('btn-solo-play').addEventListener('click', () => {
+    if(mySelectedIndex === null) return;
+    const availableOpp = oppDeck.map((c,i)=>i).filter(i => !oppDeck[i].used);
+    const oppIdx = randomChoice(availableOpp);
+    currentField = { myIdx: mySelectedIndex, oppIdx };
+    renderSoloBattle();
+  });
+
+  function renderSoloJudgePanel(){
+    const myCard = myDeck[currentField.myIdx];
+    const oppCard = oppDeck[currentField.oppIdx];
+    const adv = typeAdvantage(myCard.type, oppCard.type);
+    document.getElementById('solo-advantage-note').textContent =
+      adv === 'A' ? 'あなたのタイプが有利（+1）' : adv === 'B' ? '相手のタイプが有利（+1）' : 'タイプ相性はニュートラル';
+
+    const winnerRadios = document.getElementById('solo-winner-radios');
+    winnerRadios.innerHTML = `
+      <label><input type="radio" name="solo-winner" value="me"> あなたの勝ち</label>
+      <label><input type="radio" name="solo-winner" value="opp"> 相手の勝ち</label>
+      <label><input type="radio" name="solo-winner" value="draw"> 引き分け</label>
+    `;
+    function recalc(){
+      const adjMe = parseInt(document.getElementById('solo-adj-me').value || '0', 10);
+      const adjOpp = parseInt(document.getElementById('solo-adj-opp').value || '0', 10);
+      const meTotal = myCard.number + adjMe + (adv==='A'?1:0);
+      const oppTotal = oppCard.number + adjOpp + (adv==='B'?1:0);
+      const suggested = meTotal > oppTotal ? 'me' : (oppTotal > meTotal ? 'opp' : 'draw');
+      const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
+      if(radio) radio.checked = true;
+    }
+    document.getElementById('solo-adj-me').addEventListener('input', recalc);
+    document.getElementById('solo-adj-opp').addEventListener('input', recalc);
+    recalc();
+  }
+
+  document.getElementById('btn-solo-confirm-round').addEventListener('click', () => {
+    const choice = document.querySelector('input[name="solo-winner"]:checked');
+    if(!choice) return;
+    const winner = choice.value;
+    const award = parseInt(document.getElementById('solo-award-points').value || '1', 10);
+
+    myDeck[currentField.myIdx].used = true;
+    oppDeck[currentField.oppIdx].used = true;
+    if(winner === 'me') points.me += award;
+    if(winner === 'opp') points.opp += award;
+
+    mySelectedIndex = null;
+    currentField = null;
+    turn += 1;
+
+    if(points.me >= 3 || points.opp >= 3){
+      showSoloResult();
+    } else {
+      renderSoloBattle();
+    }
+  });
+
+  function showSoloResult(){
+    document.getElementById('solo-phase-battle').classList.add('hidden');
+    document.getElementById('solo-phase-result').classList.remove('hidden');
+    const won = points.me >= 3;
+    document.getElementById('solo-result-title').textContent = won ? 'あなたの勝利！' : '仮想の相手の勝利…';
+    document.getElementById('solo-result-sub').textContent = `最終ポイント　あなた: ${points.me} － 仮想の相手: ${points.opp}`;
+  }
+
+  document.getElementById('btn-solo-rematch').addEventListener('click', () => {
+    myDeck.forEach(c => c.used = false);
+    oppDeck = generateOpponentDeck();
+    points = { me:0, opp:0 };
+    turn = 1;
+    mySelectedIndex = null;
+    currentField = null;
+    document.getElementById('solo-phase-result').classList.add('hidden');
+    document.getElementById('solo-phase-battle').classList.remove('hidden');
+    renderSoloBattle();
+  });
+
+  document.getElementById('btn-solo-back').addEventListener('click', () => {
+    battleScreen.classList.add('hidden');
+    selectScreen.classList.remove('hidden');
+  });
+</script>
+</body>
+</html>
