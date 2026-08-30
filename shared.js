@@ -276,6 +276,22 @@ export function validateDeckWide(cards){
     if(cardsWith6.length > 1){
       return '6ptの効果を持つカードはデッキに1枚までしか入れられません。';
     }
+    const uniOrSpc = cards.filter(c => c.type === 'uni' || c.type === 'spc');
+    if(uniOrSpc.length > 1){
+      return 'デッキには万能🟡か特化🟣のどちらか1枚しか入れられません。';
+    }
+    if(uniOrSpc.some(c => c.number !== 1 && c.number !== 4)){
+      return '万能🟡・特化🟣タイプは、数字1か4のカードにしかつけられません。';
+    }
+    for(const c of cards){
+      const hasAbility = (c.effectNames||[]).some(n => { const e = effectByName(n); return e && e.category === 'ability'; });
+      if(c.species === '無能力者' && hasAbility){
+        return `「${c.name || '無題のカード'}」は無能力者なので〈異能〉効果を持てません。`;
+      }
+      if((c.species === '異能者' || c.species === 'エネミー') && !hasAbility){
+        return `「${c.name || '無題のカード'}」は${c.species}なので〈異能〉効果を最低1つ持つ必要があります。`;
+      }
+    }
     return null;
   }
 

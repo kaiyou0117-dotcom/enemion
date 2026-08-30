@@ -111,11 +111,26 @@
           </div>
         </div>
 
+        <div class="ee-bar" id="ee-bar"></div>
+
+        <!-- 特化タイプの性質選択（試合開始時、該当者のみ） -->
+        <div id="mimic-select-panel" class="hidden">
+          <h3>特化タイプの性質を選んでください（秘匿）</h3>
+          <p class="ready-note">あなたのデッキの特化🟣カードが、攻撃🔴・速度🔵・防御🟢のどの性質を借りるか、試合開始時に一度だけ決めます。</p>
+          <div class="role-grid" id="mimic-choice-buttons">
+            <div class="role-btn" data-mimic="atk">攻撃🔴の性質</div>
+            <div class="role-btn" data-mimic="spd">速度🔵の性質</div>
+            <div class="role-btn" data-mimic="def">防御🟢の性質</div>
+          </div>
+        </div>
+        <div id="mimic-wait-note" class="ready-note hidden">相手が特化タイプの性質を秘密に選んでいます…</div>
+
+        <!-- セレクトフェーズ -->
         <div class="hand-section" id="my-hand-section">
-          <h3>あなたの手札</h3>
+          <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
           <div class="hand-cards" id="my-hand"></div>
           <div style="margin-top:10px;">
-            <button class="ghost-btn" id="btn-roll-for-card">1d4を振ってカードを出す</button>
+            <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
             <span class="ready-note" id="lock-status"></span>
           </div>
         </div>
@@ -124,36 +139,46 @@
           <p class="opp-hand-note" id="opp-hand-note"></p>
         </div>
 
-        <div class="dice-area">
-          <div class="dice-face" id="dice-face">–</div>
-          <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
-          <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（カードを出す時のダイスとは別です）</span>
+        <!-- イニシアチブ：先後選択権がある側にだけ表示 -->
+        <div id="initiative-panel" class="hidden">
+          <h3>イニシアチブ</h3>
+          <p class="ready-note" id="initiative-note"></p>
+          <div class="phase-actions" id="initiative-choice-buttons"></div>
         </div>
 
+        <!-- オープン（場） -->
         <div class="hand-section">
-          <h3>場</h3>
+          <h3>場（オープン）</h3>
           <div class="reveal-board" id="field-board"></div>
         </div>
 
+        <!-- バトル：この番の裁定 -->
         <div class="judge-panel hidden" id="judge-panel-wrap">
-          <h3>この番の裁定</h3>
+          <h3>バトル（この番の裁定）</h3>
           <div class="judge-row">
-            <label style="margin:0;">タイプ相性</label>
+            <label style="margin:0;">先後／タイプ相性</label>
             <span id="advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
           </div>
           <div class="judge-row">
-            <label style="margin:0;">P1 効果補正</label>
+            <label style="margin:0;">P1 数字補正</label>
             <input type="number" id="adj-p1" value="0">
-            <label style="margin:0;">P2 効果補正</label>
+            <label style="margin:0;">P2 数字補正</label>
             <input type="number" id="adj-p2" value="0">
           </div>
+          <p class="ready-note" id="type-ability-note"></p>
           <div class="judge-row">
-            <label style="margin:0;">獲得ポイント</label>
+            <label style="margin:0;">獲得ポイント（win）</label>
             <input type="number" id="award-points" value="1" min="0">
           </div>
           <div class="judge-row winner-radios" id="winner-radios"></div>
-          <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する</button>
+          <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する（エンド）</button>
           <span class="ready-note" id="confirm-note"></span>
+        </div>
+
+        <div class="dice-area">
+          <div class="dice-face" id="dice-face">–</div>
+          <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
+          <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
         </div>
       </div>
 
@@ -214,6 +239,9 @@
   });
 
   let myAvatarDataUrl = null;
+  let myHandSelection = null; // セレクト中に自分が選んでいるカードのindex（未確定）
+  let judgePanelTurnMark = null; // バトル裁定欄の自動補正を、ターンごとに一度だけ入れるための目印
+  let initiativeResolvedForTurn = null; // イニシアチブ抽選の重複実行防止
   const inputAvatar = document.getElementById('input-avatar');
   const avatarPreview = document.getElementById('avatar-preview');
   inputAvatar.addEventListener('change', async () => {
@@ -528,66 +556,190 @@
     if(cur && cur.phase && cur.phase !== 'build') return; // 既に開始済み
     // 競合を減らすため player1 側が初期化を担当
     if(myRole !== 'player1') return;
+    const p1HasSpc = (latestDecks.player1.cards||[]).some(c => c.type === 'spc');
+    const p2HasSpc = (latestDecks.player2.cards||[]).some(c => c.type === 'spc');
     await set(ref(db, `rooms/${roomId}/battle`), {
       phase: 'battle',
       turn: 1,
-      firstSlot: 'player1',
       points: { player1: 0, player2: 0 },
+      ee: { player1: 2, player2: 2 },
+      eeBonusNext: { player1: 0, player2: 0 },
+      specialMimic: { player1: null, player2: null },
+      mimicNeeded: { player1: p1HasSpc, player2: p2HasSpc },
       picks: { player1: null, player2: null },
+      firstSlot: null,
+      initiativePending: null,
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
   }
 
   // ============ 対戦フェーズ ============
+  function effectiveType(card, mimic){
+    return card.type === 'spc' ? (mimic || null) : card.type;
+  }
+
   function renderBattlePhase(){
     if(!latestBattle || latestBattle.phase !== 'battle') return;
     const isPlayer = myRole === 'player1' || myRole === 'player2';
+
+    if(initiativeResolvedForTurn !== null && initiativeResolvedForTurn !== latestBattle.turn){
+      initiativeResolvedForTurn = null;
+    }
+    if(judgePanelTurnMark !== null && judgePanelTurnMark !== latestBattle.turn){
+      // ターンが進んだのでリセット（次のバトル裁定欄で自動値を入れ直す）
+    }
 
     document.getElementById('score-name-p1').textContent = memberName('player1');
     document.getElementById('score-name-p2').textContent = memberName('player2');
     renderPips('pips-p1', latestBattle.points.player1);
     renderPips('pips-p2', latestBattle.points.player2);
-    document.getElementById('turn-indicator').textContent =
-      `第${latestBattle.turn}ターン ／ 先手: ${memberName(latestBattle.firstSlot)}`;
+    document.getElementById('turn-indicator').textContent = `第${latestBattle.turn}ターン`;
 
-    // 自分の手札
+    const ee = latestBattle.ee || {player1:2, player2:2};
+    document.getElementById('ee-bar').innerHTML =
+      `<span>${escapeHtml(memberName('player1'))} EE: ${ee.player1}</span><span>${escapeHtml(memberName('player2'))} EE: ${ee.player2}</span>`;
+
+    // --- 特化タイプの性質選択ゲート（試合開始時、該当者のみ・秘匿） ---
+    const mimicNeeded = latestBattle.mimicNeeded || {player1:false, player2:false};
+    const specialMimic = latestBattle.specialMimic || {player1:null, player2:null};
+    const myMimicPending = isPlayer && mimicNeeded[myRole] && !specialMimic[myRole];
+    const anyMimicPending = (mimicNeeded.player1 && !specialMimic.player1) || (mimicNeeded.player2 && !specialMimic.player2);
+
+    document.getElementById('mimic-select-panel').classList.toggle('hidden', !myMimicPending);
+    document.getElementById('mimic-wait-note').classList.toggle('hidden', !(anyMimicPending && !myMimicPending));
+
+    if(anyMimicPending){
+      document.getElementById('my-hand-section').classList.add('hidden');
+      document.getElementById('opp-hand-section').classList.add('hidden');
+      document.getElementById('initiative-panel').classList.add('hidden');
+      document.getElementById('field-board').innerHTML = '';
+      document.getElementById('judge-panel-wrap').classList.add('hidden');
+      return;
+    }
+
+    // --- セレクトフェーズ：自分の手札 ---
     const myHandSection = document.getElementById('my-hand-section');
     const oppHandSection = document.getElementById('opp-hand-section');
+
     if(isPlayer){
       myHandSection.classList.remove('hidden');
       const myDeck = latestDecks[myRole];
       const myHand = document.getElementById('my-hand');
       myHand.innerHTML = '';
-      const myPick = latestBattle.picks ? latestBattle.picks[myRole] : null;
+      const myEE = ee[myRole];
+      const pick = latestBattle.picks ? latestBattle.picks[myRole] : null;
       (myDeck.cards || []).forEach((card, idx) => {
         const div = document.createElement('div');
-        const isChosenThisTurn = myPick && myPick.locked && myPick.cardIndex === idx;
-        div.className = 'hand-card' + (isChosenThisTurn ? ' selected' : '');
+        const isChosenThisTurn = pick && pick.locked && pick.cardIndex === idx;
+        const affordable = card.number <= myEE;
+        const isSelected = !pick && myHandSelection === idx;
+        div.className = 'hand-card' + (isChosenThisTurn || isSelected ? ' selected' : '') + (!affordable ? ' unaffordable' : '');
         const thumb = card.image ? `<img src="${card.image}" alt="" style="width:100%; height:40px; object-fit:cover; border-radius:3px; margin-bottom:4px;">` : '';
-        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
+        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">必要EE: ${card.number}</div>`;
+        if(affordable && !(pick && pick.locked)){
+          div.addEventListener('click', () => { myHandSelection = idx; renderBattlePhase(); });
+        }
         myHand.appendChild(div);
       });
-      const canRoll = !(myPick && myPick.locked);
-      document.getElementById('btn-roll-for-card').disabled = !canRoll;
-      document.getElementById('lock-status').textContent = (myPick && myPick.locked)
-        ? `1d4で数字${myDeck.cards[myPick.cardIndex].number}が出て、そのカードを場に出しました。相手を待っています。`
-        : '';
+      const canLock = !(pick && pick.locked) && myHandSelection !== null && myDeck.cards[myHandSelection].number <= myEE;
+      document.getElementById('btn-lock-card').disabled = !canLock;
+      document.getElementById('lock-status').textContent = (pick && pick.locked)
+        ? `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`
+        : (myEE < 1 ? 'EEが足りず、出せるカードがありません。' : '');
       oppHandSection.classList.add('hidden');
     } else {
       myHandSection.classList.add('hidden');
       oppHandSection.classList.remove('hidden');
-      document.getElementById('opp-hand-note').textContent =
-        `カードは1d4の出目で毎回決まります（同じカードが何度も出ることがあります）`;
+      document.getElementById('opp-hand-note').textContent = 'お互い秘密にカードを選んでいます（セレクト中）…';
     }
 
     const p1Locked = latestBattle.picks && latestBattle.picks.player1 && latestBattle.picks.player1.locked;
     const p2Locked = latestBattle.picks && latestBattle.picks.player2 && latestBattle.picks.player2.locked;
     const bothLocked = p1Locked && p2Locked;
 
-    renderFieldBoard(p1Locked, p2Locked);
-    document.getElementById('judge-panel-wrap').classList.toggle('hidden', !bothLocked);
-    if(bothLocked){ renderJudgePanel(); }
+    // --- オープンフェーズ：場に公開 ---
+    document.getElementById('field-board').innerHTML = bothLocked
+      ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex]) + revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex])
+      : `<div class="field-slot-empty">${p1Locked?'':escapeHtml(memberName('player1'))+'：検討中…　'}${p2Locked?'':escapeHtml(memberName('player2'))+'：検討中…'}</div>`;
+
+    const face = document.getElementById('dice-face');
+    face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
+
+    if(!bothLocked){
+      document.getElementById('initiative-panel').classList.add('hidden');
+      document.getElementById('judge-panel-wrap').classList.add('hidden');
+      return;
+    }
+
+    // --- イニシアチブフェーズ：先後決定 ---
+    resolveInitiativeIfNeeded();
+
+    if(!latestBattle.firstSlot){
+      const pending = latestBattle.initiativePending;
+      if(pending){
+        document.getElementById('initiative-panel').classList.remove('hidden');
+        document.getElementById('judge-panel-wrap').classList.add('hidden');
+        const note = document.getElementById('initiative-note');
+        const btnsWrap = document.getElementById('initiative-choice-buttons');
+        if(myRole === pending){
+          note.textContent = 'あなたのタイプ特性により、先手／後手を選べます。';
+          btnsWrap.innerHTML = `<button class="ghost-btn" data-choose-first="me">自分が先手</button><button class="ghost-btn" data-choose-first="opp">自分が後手</button>`;
+          btnsWrap.querySelectorAll('[data-choose-first]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const iAmFirst = btn.dataset.chooseFirst === 'me';
+              const first = iAmFirst ? myRole : oppSlot(myRole);
+              await update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first, initiativePending: null });
+            });
+          });
+        } else {
+          note.textContent = `${memberName(pending)}が先手／後手を選んでいます…`;
+          btnsWrap.innerHTML = '';
+        }
+      } else {
+        document.getElementById('initiative-panel').classList.add('hidden');
+        document.getElementById('judge-panel-wrap').classList.add('hidden');
+      }
+      return;
+    }
+
+    // --- バトルフェーズ：裁定 ---
+    document.getElementById('initiative-panel').classList.add('hidden');
+    document.getElementById('judge-panel-wrap').classList.remove('hidden');
+    renderJudgePanel();
+  }
+
+  function resolveInitiativeIfNeeded(){
+    if(myRole !== 'player1') return;
+    if(latestBattle.firstSlot) return;
+    if(latestBattle.initiativePending) return;
+    if(initiativeResolvedForTurn === latestBattle.turn) return;
+    initiativeResolvedForTurn = latestBattle.turn;
+
+    const p1Card = latestDecks.player1.cards[latestBattle.picks.player1.cardIndex];
+    const p2Card = latestDecks.player2.cards[latestBattle.picks.player2.cardIndex];
+    const adv = typeAdvantage(p1Card.type, p2Card.type);
+    const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
+    const mimic = latestBattle.specialMimic || {};
+
+    let chooser = null;
+    if(advSlot){
+      const advCard = advSlot==='player1' ? p1Card : p2Card;
+      const advType = effectiveType(advCard, mimic[advSlot]);
+      if(advType === 'spd') chooser = advSlot;
+    }
+    if(!chooser){
+      // 万能タイプ：有利不利とは無関係に、相手より数字が大きければ選べる
+      if(p1Card.type === 'uni' && p1Card.number > p2Card.number) chooser = 'player1';
+      else if(p2Card.type === 'uni' && p2Card.number > p1Card.number) chooser = 'player2';
+    }
+
+    if(chooser){
+      update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser });
+    } else {
+      const first = (Math.floor(Math.random()*2) === 0) ? 'player1' : 'player2';
+      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first });
+    }
   }
 
   function memberName(slot){
@@ -605,12 +757,24 @@
     }
   }
 
-  document.getElementById('btn-roll-for-card').addEventListener('click', async () => {
+  // 特化タイプの性質選択（一度だけ、page load時に配線）
+  document.getElementById('mimic-choice-buttons').querySelectorAll('[data-mimic]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await update(ref(db, `rooms/${roomId}/battle/specialMimic`), { [myRole]: btn.dataset.mimic });
+      await update(ref(db, `rooms/${roomId}/battle/mimicNeeded`), { [myRole]: false });
+      await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`${myName}が特化タイプの性質を選んだ（内容は秘匿）。`, ts: Date.now() });
+    });
+  });
+
+  document.getElementById('btn-lock-card').addEventListener('click', async () => {
+    if(myHandSelection === null) return;
     const myDeck = latestDecks[myRole];
-    const roll = Math.floor(Math.random()*4) + 1; // 1d4
-    const cardIndex = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex, locked: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `1d4を振り、${roll}の目で数字${myDeck.cards[cardIndex].number}のカードを場に出した。`, ts: Date.now() });
+    const card = myDeck.cards[myHandSelection];
+    const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
+    if(card.number > myEE) return;
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, locked: true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
+    myHandSelection = null;
   });
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
@@ -619,20 +783,6 @@
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `1d4を振り、${value}が出た。`, ts: Date.now() });
   });
 
-  function renderFieldBoard(p1Locked, p2Locked){
-    const board = document.getElementById('field-board');
-    const p1Html = p1Locked
-      ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex])
-      : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`;
-    const p2Html = p2Locked
-      ? revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex])
-      : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`;
-    board.innerHTML = p1Html + p2Html;
-
-    const face = document.getElementById('dice-face');
-    face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
-  }
-
   function renderJudgePanel(){
     const p1Idx = latestBattle.picks.player1.cardIndex;
     const p2Idx = latestBattle.picks.player2.cardIndex;
@@ -640,12 +790,35 @@
     const p2Card = latestDecks.player2.cards[p2Idx];
 
     const adv = typeAdvantage(p1Card.type, p2Card.type);
-    const advNote = document.getElementById('advantage-note');
-    advNote.textContent = adv === 'A' ? `${memberName('player1')}のタイプが有利（+1）`
-      : adv === 'B' ? `${memberName('player2')}のタイプが有利（+1）`
-      : 'タイプ相性はニュートラル';
+    const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
+    const mimic = latestBattle.specialMimic || {};
+    const advType = advSlot ? effectiveType(advSlot==='player1'?p1Card:p2Card, mimic[advSlot]) : null;
 
-    // 勝者候補を自動計算して初期選択
+    const advNote = document.getElementById('advantage-note');
+    advNote.textContent = `先手: ${memberName(latestBattle.firstSlot)} ／ ` + (adv === 'A' ? `${memberName('player1')}のタイプが有利（+1）`
+      : adv === 'B' ? `${memberName('player2')}のタイプが有利（+1）`
+      : 'タイプ相性はニュートラル');
+
+    let autoAdjP1 = 0, autoAdjP2 = 0;
+    let abilityText = '';
+    if(advType === 'atk'){
+      if(advSlot === 'player1') autoAdjP2 -= 1; else autoAdjP1 -= 1;
+      abilityText = `${memberName(advSlot)}の攻撃タイプにより、相手の数字-1（下の補正欄に自動反映・調整可）。`;
+    } else if(advType === 'def'){
+      abilityText = `${memberName(advSlot)}の防御タイプにより、この番の結果確定時に次のターンのEEが+1されます。`;
+    } else if(advType === 'spd'){
+      abilityText = `${memberName(advSlot)}の速度タイプにより、先後を選択しました。`;
+    }
+    document.getElementById('type-ability-note').textContent = abilityText;
+
+    const adjP1El = document.getElementById('adj-p1');
+    const adjP2El = document.getElementById('adj-p2');
+    if(judgePanelTurnMark !== latestBattle.turn){
+      adjP1El.value = autoAdjP1;
+      adjP2El.value = autoAdjP2;
+      judgePanelTurnMark = latestBattle.turn;
+    }
+
     const winnerRadios = document.getElementById('winner-radios');
     winnerRadios.innerHTML = `
       <label><input type="radio" name="winner" value="player1"> ${escapeHtml(memberName('player1'))}の勝ち</label>
@@ -654,19 +827,18 @@
     `;
 
     function recalcSuggestion(){
-      const adjP1 = parseInt(document.getElementById('adj-p1').value || '0', 10);
-      const adjP2 = parseInt(document.getElementById('adj-p2').value || '0', 10);
+      const adjP1 = parseInt(adjP1El.value || '0', 10);
+      const adjP2 = parseInt(adjP2El.value || '0', 10);
       let p1Total = p1Card.number + adjP1 + (adv==='A' ? 1 : 0);
       let p2Total = p2Card.number + adjP2 + (adv==='B' ? 1 : 0);
       let suggested = p1Total > p2Total ? 'player1' : (p2Total > p1Total ? 'player2' : 'draw');
       const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
       if(radio) radio.checked = true;
     }
-    document.getElementById('adj-p1').addEventListener('input', recalcSuggestion);
-    document.getElementById('adj-p2').addEventListener('input', recalcSuggestion);
+    adjP1El.addEventListener('input', recalcSuggestion);
+    adjP2El.addEventListener('input', recalcSuggestion);
     recalcSuggestion();
 
-    // 判定操作の権限: ジャッジがいればジャッジのみ、いなければ両プレイヤー
     const hasJudge = Object.values(latestMembers).some(m => m.slot === 'judge');
     const canConfirm = hasJudge ? myRole === 'judge' : (myRole === 'player1' || myRole === 'player2');
     document.getElementById('btn-confirm-round').disabled = !canConfirm;
@@ -678,7 +850,8 @@
     const effectsHtml = (card.effectNames || []).map(n => {
       const e = effectByName(n);
       if(!e) return '';
-      return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
+      const catTag = e.category==='ability' ? '〈異能〉' : e.category==='skill' ? '〈技能〉' : '';
+      return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
     return `
@@ -702,28 +875,45 @@
 
     const p1Idx = latestBattle.picks.player1.cardIndex;
     const p2Idx = latestBattle.picks.player2.cardIndex;
+    const p1Card = latestDecks.player1.cards[p1Idx];
+    const p2Card = latestDecks.player2.cards[p2Idx];
 
-    const updates = {};
+    const adv = typeAdvantage(p1Card.type, p2Card.type);
+    const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
+    const mimic = latestBattle.specialMimic || {};
+    const advType = advSlot ? effectiveType(advSlot==='player1'?p1Card:p2Card, mimic[advSlot]) : null;
 
     let newPoints = { ...latestBattle.points };
     if(winner === 'player1' || winner === 'player2'){
       newPoints[winner] = (newPoints[winner] || 0) + award;
     }
-    updates['battle/points'] = newPoints;
-    updates['battle/picks'] = { player1: null, player2: null };
-    updates['battle/turn'] = latestBattle.turn + 1;
-    updates['battle/firstSlot'] = oppSlot(latestBattle.firstSlot);
+
+    let eeBonus = { player1: 0, player2: 0 };
+    if(advType === 'def' && advSlot){ eeBonus[advSlot] = 1; }
 
     const finished = newPoints.player1 >= 3 || newPoints.player2 >= 3;
+
+    const updates = {};
+    updates['battle/points'] = newPoints;
+    updates['battle/picks'] = { player1: null, player2: null };
+    updates['battle/firstSlot'] = null;
+    updates['battle/initiativePending'] = null;
+    updates['battle/turn'] = latestBattle.turn + 1;
+    updates['battle/ee'] = { player1: 2 + eeBonus.player1, player2: 2 + eeBonus.player2 };
+    updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
+
     if(finished){
       updates['battle/phase'] = 'result';
       updates['battle/winner'] = newPoints.player1 >= 3 ? 'player1' : 'player2';
     }
 
     await update(ref(db, `rooms/${roomId}`), updates);
+    judgePanelTurnMark = null;
 
     const winnerText = winner === 'draw' ? '引き分け' : `${memberName(winner)}の勝ち`;
-    await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`この番の結果: ${winnerText}（+${award}pt）`, ts: Date.now() });
+    let logText = `エンド：この番の結果は${winnerText}（+${award}win）。`;
+    if(advType === 'def' && advSlot) logText += `${memberName(advSlot)}の次ターンEEが+1。`;
+    await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text: logText, ts: Date.now() });
     if(finished){
       await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`勝負あり。${memberName(updates['battle/winner'])}の勝利。`, ts: Date.now() });
     }
@@ -734,16 +924,22 @@
     if(!latestBattle || latestBattle.phase !== 'result') return;
     document.getElementById('result-title').textContent = `${memberName(latestBattle.winner)} の勝利！`;
     document.getElementById('result-sub').textContent =
-      `最終ポイント　${memberName('player1')}: ${latestBattle.points.player1} － ${memberName('player2')}: ${latestBattle.points.player2}`;
+      `最終win数　${memberName('player1')}: ${latestBattle.points.player1} － ${memberName('player2')}: ${latestBattle.points.player2}`;
   }
 
   document.getElementById('btn-rematch').addEventListener('click', async () => {
+    const p1HasSpc = (latestDecks.player1.cards||[]).some(c => c.type === 'spc');
+    const p2HasSpc = (latestDecks.player2.cards||[]).some(c => c.type === 'spc');
     const updates = {};
-    updates['decks/player1/cards'] = (latestDecks.player1.cards || []).map(c => ({ ...c, used:false }));
-    updates['decks/player2/cards'] = (latestDecks.player2.cards || []).map(c => ({ ...c, used:false }));
     updates['battle'] = {
-      phase:'battle', turn:1, firstSlot:'player1',
-      points:{player1:0, player2:0}, picks:{player1:null, player2:null},
+      phase:'battle', turn:1,
+      points:{player1:0, player2:0},
+      ee:{player1:2, player2:2},
+      eeBonusNext:{player1:0, player2:0},
+      specialMimic:{player1:null, player2:null},
+      mimicNeeded:{player1:p1HasSpc, player2:p2HasSpc},
+      picks:{player1:null, player2:null},
+      firstSlot:null, initiativePending:null,
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
