@@ -216,13 +216,12 @@
     hand.innerHTML = '';
     myDeck.forEach((card, idx) => {
       const div = document.createElement('div');
-      const isUsed = card.used;
       const isChosenThisTurn = currentField && currentField.myIdx === idx;
-      div.className = 'hand-card' + (isUsed ? ' used' : '') + (isChosenThisTurn ? ' selected' : '');
+      div.className = 'hand-card' + (isChosenThisTurn ? ' selected' : '');
       div.innerHTML = `<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
       hand.appendChild(div);
     });
-    const canRoll = !currentField && myDeck.some(c => !c.used);
+    const canRoll = !currentField;
     document.getElementById('btn-solo-play').disabled = !canRoll;
     document.getElementById('solo-roll-status').textContent = currentField
       ? `1d4で数字${myDeck[currentField.myIdx].number}が出て、そのカードを場に出しました。`
@@ -257,20 +256,10 @@
   }
 
   document.getElementById('btn-solo-play').addEventListener('click', () => {
-    const availableMine = myDeck.map((c,i)=>i).filter(i => !myDeck[i].used);
-    if(availableMine.length === 0) return;
-    let roll, myIdx;
-    let attempts = 0;
-    do{
-      roll = Math.floor(Math.random()*4) + 1; // 1d4
-      myIdx = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
-      attempts++;
-    } while(myDeck[myIdx].used && attempts < 50);
-    if(myDeck[myIdx].used){
-      myIdx = availableMine[0];
-    }
-    const availableOpp = oppDeck.map((c,i)=>i).filter(i => !oppDeck[i].used);
-    const oppIdx = randomChoice(availableOpp);
+    const roll = Math.floor(Math.random()*4) + 1; // 1d4
+    const myIdx = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
+    const oppRoll = Math.floor(Math.random()*4) + 1;
+    const oppIdx = oppRoll - 1;
     currentField = { myIdx, oppIdx };
     renderSoloBattle();
   });
@@ -308,8 +297,6 @@
     const winner = choice.value;
     const award = parseInt(document.getElementById('solo-award-points').value || '1', 10);
 
-    myDeck[currentField.myIdx].used = true;
-    oppDeck[currentField.oppIdx].used = true;
     if(winner === 'me') points.me += award;
     if(winner === 'opp') points.opp += award;
 
@@ -332,7 +319,6 @@
   }
 
   document.getElementById('btn-solo-rematch').addEventListener('click', () => {
-    myDeck.forEach(c => c.used = false);
     oppDeck = generateOpponentDeck();
     points = { me:0, opp:0 };
     turn = 1;

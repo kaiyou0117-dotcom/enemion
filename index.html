@@ -525,13 +525,12 @@
       const myPick = latestBattle.picks ? latestBattle.picks[myRole] : null;
       (myDeck.cards || []).forEach((card, idx) => {
         const div = document.createElement('div');
-        const isUsed = card.used;
         const isChosenThisTurn = myPick && myPick.locked && myPick.cardIndex === idx;
-        div.className = 'hand-card' + (isUsed ? ' used' : '') + (isChosenThisTurn ? ' selected' : '');
+        div.className = 'hand-card' + (isChosenThisTurn ? ' selected' : '');
         div.innerHTML = `<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div>`;
         myHand.appendChild(div);
       });
-      const canRoll = !(myPick && myPick.locked) && (myDeck.cards||[]).some(c => !c.used);
+      const canRoll = !(myPick && myPick.locked);
       document.getElementById('btn-roll-for-card').disabled = !canRoll;
       document.getElementById('lock-status').textContent = (myPick && myPick.locked)
         ? `1d4で数字${myDeck.cards[myPick.cardIndex].number}が出て、そのカードを場に出しました。相手を待っています。`
@@ -540,10 +539,8 @@
     } else {
       myHandSection.classList.add('hidden');
       oppHandSection.classList.remove('hidden');
-      const p1Left = (latestDecks.player1?.cards || []).filter(c=>!c.used).length;
-      const p2Left = (latestDecks.player2?.cards || []).filter(c=>!c.used).length;
       document.getElementById('opp-hand-note').textContent =
-        `${memberName('player1')}: 残り${p1Left}枚 ／ ${memberName('player2')}: 残り${p2Left}枚`;
+        `カードは1d4の出目で毎回決まります（同じカードが何度も出ることがあります）`;
     }
 
     const p1Locked = latestBattle.picks && latestBattle.picks.player1 && latestBattle.picks.player1.locked;
@@ -572,20 +569,8 @@
 
   document.getElementById('btn-roll-for-card').addEventListener('click', async () => {
     const myDeck = latestDecks[myRole];
-    const availableIdx = (myDeck.cards || []).map((c,i)=>i).filter(i => !myDeck.cards[i].used);
-    if(availableIdx.length === 0) return;
-    let roll, cardIndex;
-    let attempts = 0;
-    do{
-      roll = Math.floor(Math.random()*4) + 1; // 1d4
-      cardIndex = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
-      attempts++;
-    } while(myDeck.cards[cardIndex].used && attempts < 50);
-    if(myDeck.cards[cardIndex].used){
-      // 50回振っても空かなかった場合の保険：残っている中から強制的に選ぶ
-      cardIndex = availableIdx[0];
-      roll = myDeck.cards[cardIndex].number;
-    }
+    const roll = Math.floor(Math.random()*4) + 1; // 1d4
+    const cardIndex = roll - 1; // 数字はカード枠に固定なので、出目=そのままカードの位置
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex, locked: true });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `1d4を振り、${roll}の目で数字${myDeck.cards[cardIndex].number}のカードを場に出した。`, ts: Date.now() });
   });
@@ -679,8 +664,6 @@
     const p2Idx = latestBattle.picks.player2.cardIndex;
 
     const updates = {};
-    updates[`decks/player1/cards/${p1Idx}/used`] = true;
-    updates[`decks/player2/cards/${p2Idx}/used`] = true;
 
     let newPoints = { ...latestBattle.points };
     if(winner === 'player1' || winner === 'player2'){
