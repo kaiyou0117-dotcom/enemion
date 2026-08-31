@@ -115,6 +115,35 @@
 
             <div class="ee-bar" id="ee-bar"></div>
 
+            <!-- ジャッジ専用操作パネル -->
+            <div id="judge-admin-panel" class="hidden">
+              <h3>ジャッジ操作</h3>
+              <div class="judge-admin-row">
+                <label>P1 EE</label>
+                <input type="number" id="admin-ee-p1" style="width:70px;">
+                <label>P2 EE</label>
+                <input type="number" id="admin-ee-p2" style="width:70px;">
+                <button type="button" class="ghost-btn" id="btn-admin-apply-ee">EEを変更</button>
+              </div>
+              <div class="judge-admin-row">
+                <label>P1 win</label>
+                <input type="number" id="admin-points-p1" style="width:70px;">
+                <label>P2 win</label>
+                <input type="number" id="admin-points-p2" style="width:70px;">
+                <button type="button" class="ghost-btn" id="btn-admin-apply-points">winを変更</button>
+              </div>
+              <div class="judge-admin-lock-wrap">
+                <div>
+                  <div class="judge-admin-lock-label" id="admin-lock-label-p1">プレイヤー1のカード</div>
+                  <div class="judge-admin-lock-cards" id="admin-lock-cards-p1"></div>
+                </div>
+                <div>
+                  <div class="judge-admin-lock-label" id="admin-lock-label-p2">プレイヤー2のカード</div>
+                  <div class="judge-admin-lock-cards" id="admin-lock-cards-p2"></div>
+                </div>
+              </div>
+            </div>
+
             <!-- 特化タイプの性質選択（試合開始時、該当者のみ） -->
             <div id="mimic-select-panel" class="hidden">
               <h3>特化タイプの性質を選んでください（秘匿）</h3>
@@ -594,6 +623,7 @@
       picks: { player1: null, player2: null },
       firstSlot: null,
       initiativePending: null,
+      lockedCards: { player1: [false,false,false,false], player2: [false,false,false,false] },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -625,6 +655,13 @@
     document.getElementById('ee-bar').innerHTML =
       `<span>${escapeHtml(memberName('player1'))} EE: ${ee.player1}</span><span>${escapeHtml(memberName('player2'))} EE: ${ee.player2}</span>`;
 
+    // --- ジャッジ専用操作パネル ---
+    const isJudgeRole = myRole === 'judge';
+    document.getElementById('judge-admin-panel').classList.toggle('hidden', !isJudgeRole);
+    if(isJudgeRole){
+      renderJudgeAdminPanel(ee);
+    }
+
     // --- 特化タイプの性質選択ゲート（試合開始時、該当者のみ・秘匿） ---
     const mimicNeeded = latestBattle.mimicNeeded || {player1:false, player2:false};
     const specialMimic = latestBattle.specialMimic || {player1:null, player2:null};
@@ -654,20 +691,23 @@
       myHand.innerHTML = '';
       const myEE = ee[myRole];
       const pick = latestBattle.picks ? latestBattle.picks[myRole] : null;
+      const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
       (myDeck.cards || []).forEach((card, idx) => {
         const div = document.createElement('div');
         const isChosenThisTurn = pick && pick.locked && pick.cardIndex === idx;
-        const affordable = card.number <= myEE;
+        const isLockedByJudge = !!myLocked[idx];
+        const affordable = card.number <= myEE && !isLockedByJudge;
         const isSelected = !pick && myHandSelection === idx;
         div.className = 'hand-card' + (isChosenThisTurn || isSelected ? ' selected' : '') + (!affordable ? ' unaffordable' : '');
         const thumb = card.image ? `<img src="${card.image}" alt="" style="width:100%; height:40px; object-fit:cover; border-radius:3px; margin-bottom:4px;">` : '';
-        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">必要EE: ${card.number}</div>`;
+        const costNote = isLockedByJudge ? 'ジャッジにより使用禁止' : `必要EE: ${card.number}`;
+        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">${costNote}</div>`;
         if(affordable && !(pick && pick.locked)){
           div.addEventListener('click', () => { myHandSelection = idx; renderBattlePhase(); });
         }
         myHand.appendChild(div);
       });
-      const canLock = !(pick && pick.locked) && myHandSelection !== null && myDeck.cards[myHandSelection].number <= myEE;
+      const canLock = !(pick && pick.locked) && myHandSelection !== null && myDeck.cards[myHandSelection].number <= myEE && !myLocked[myHandSelection];
       document.getElementById('btn-lock-card').disabled = !canLock;
       document.getElementById('lock-status').textContent = (pick && pick.locked)
         ? `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`
@@ -779,6 +819,67 @@
     return m ? m.name : (slot==='player1' ? 'プレイヤー1' : 'プレイヤー2');
   }
 
+  function renderJudgeAdminPanel(ee){
+    document.getElementById('admin-ee-p1').placeholder = ee.player1;
+    document.getElementById('admin-ee-p2').placeholder = ee.player2;
+    const points = latestBattle.points || {player1:0, player2:0};
+    document.getElementById('admin-points-p1').placeholder = points.player1;
+    document.getElementById('admin-points-p2').placeholder = points.player2;
+
+    document.getElementById('admin-lock-label-p1').textContent = `${memberName('player1')}のカード`;
+    document.getElementById('admin-lock-label-p2').textContent = `${memberName('player2')}のカード`;
+
+    const lockedCards = latestBattle.lockedCards || { player1:[false,false,false,false], player2:[false,false,false,false] };
+    ['player1','player2'].forEach(slot => {
+      const wrap = document.getElementById(`admin-lock-cards-${slot==='player1'?'p1':'p2'}`);
+      wrap.innerHTML = '';
+      const deck = latestDecks[slot];
+      if(!deck) return;
+      deck.cards.forEach((card, idx) => {
+        const label = document.createElement('label');
+        const locked = !!(lockedCards[slot] && lockedCards[slot][idx]);
+        label.innerHTML = `<input type="checkbox" data-lock-slot="${slot}" data-lock-idx="${idx}" ${locked?'checked':''}> 数字${card.number}（${escapeHtml(card.name)||'無題'}）を使用禁止にする`;
+        wrap.appendChild(label);
+      });
+    });
+    document.querySelectorAll('[data-lock-slot]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const slot = cb.dataset.lockSlot;
+        const idx = parseInt(cb.dataset.lockIdx, 10);
+        await update(ref(db, `rooms/${roomId}/battle/lockedCards/${slot}`), { [idx]: cb.checked });
+        const card = latestDecks[slot].cards[idx];
+        await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}のカードを${cb.checked?'使用禁止に':'使用可能に'}した。`, ts: Date.now() });
+      });
+    });
+  }
+
+  document.getElementById('btn-admin-apply-ee').addEventListener('click', async () => {
+    const p1Input = document.getElementById('admin-ee-p1');
+    const p2Input = document.getElementById('admin-ee-p2');
+    const currentEe = latestBattle.ee || {player1:2, player2:2};
+    const p1 = p1Input.value.trim() !== '' ? parseInt(p1Input.value, 10) : currentEe.player1;
+    const p2 = p2Input.value.trim() !== '' ? parseInt(p2Input.value, 10) : currentEe.player2;
+    await update(ref(db, `rooms/${roomId}/battle/ee`), { player1: p1, player2: p2 });
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:`EEを ${memberName('player1')}:${p1}／${memberName('player2')}:${p2} に変更した。`, ts: Date.now() });
+    p1Input.value = ''; p2Input.value = '';
+  });
+
+  document.getElementById('btn-admin-apply-points').addEventListener('click', async () => {
+    const p1Input = document.getElementById('admin-points-p1');
+    const p2Input = document.getElementById('admin-points-p2');
+    const currentPoints = latestBattle.points || {player1:0, player2:0};
+    const p1 = p1Input.value.trim() !== '' ? parseInt(p1Input.value, 10) : currentPoints.player1;
+    const p2 = p2Input.value.trim() !== '' ? parseInt(p2Input.value, 10) : currentPoints.player2;
+    const updates = { player1: p1, player2: p2 };
+    await update(ref(db, `rooms/${roomId}/battle/points`), updates);
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:`winを ${memberName('player1')}:${p1}／${memberName('player2')}:${p2} に変更した。`, ts: Date.now() });
+    if(p1 >= 3 || p2 >= 3){
+      await update(ref(db, `rooms/${roomId}/battle`), { phase:'result', winner: p1 >= 3 ? 'player1' : 'player2' });
+      await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`勝負あり。${memberName(p1 >= 3 ? 'player1' : 'player2')}の勝利。`, ts: Date.now() });
+    }
+    p1Input.value = ''; p2Input.value = '';
+  });
+
   function renderPips(id, points){
     const el = document.getElementById(id);
     el.innerHTML = '';
@@ -803,7 +904,8 @@
     const myDeck = latestDecks[myRole];
     const card = myDeck.cards[myHandSelection];
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
-    if(card.number > myEE) return;
+    const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
+    if(card.number > myEE || myLocked[myHandSelection]) return;
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
@@ -983,6 +1085,7 @@
       mimicNeeded:{player1:p1HasSpc, player2:p2HasSpc},
       picks:{player1:null, player2:null},
       firstSlot:null, initiativePending:null,
+      lockedCards:{player1:[false,false,false,false], player2:[false,false,false,false]},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);

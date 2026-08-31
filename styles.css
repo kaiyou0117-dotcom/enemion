@@ -450,6 +450,51 @@
   }
   .ee-bar .ee-low{ color: var(--red-glow); }
 
+  #judge-admin-panel{
+    background: var(--panel);
+    border: 1px solid var(--red-glow);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  #judge-admin-panel h3{
+    font-family: var(--font-display);
+    font-size: 15px;
+    margin: 0 0 10px;
+    color: var(--red-glow);
+  }
+  .judge-admin-row{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .judge-admin-row label{ margin:0; font-size:12px; }
+  .judge-admin-row input[type="number"]{ margin-bottom:0; }
+  .judge-admin-lock-wrap{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 6px;
+  }
+  .judge-admin-lock-label{
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--gold);
+    margin-bottom: 6px;
+  }
+  .judge-admin-lock-cards{ display:flex; flex-direction:column; gap: 4px; }
+  .judge-admin-lock-cards label{
+    display:flex;
+    align-items:center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink);
+    margin:0;
+    cursor:pointer;
+  }
+
   #mimic-select-panel, #initiative-panel{
     background: var(--panel);
     border: 1px solid var(--gold);
