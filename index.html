@@ -68,138 +68,150 @@
 
   <!-- プレイ画面 -->
   <div id="play-screen" class="screen hidden">
-    <div class="wrap">
+    <div class="wrap wrap-wide">
       <div class="wrap-head">
         <h2>対戦卓</h2>
         <span class="room-code" id="play-room-code"></span>
       </div>
       <div class="you-badge" id="you-badge"></div>
 
-      <div class="members" id="play-members"></div>
+      <div class="table-columns">
+        <div class="table-main">
+          <div class="members" id="play-members"></div>
 
-      <!-- 編成フェーズ -->
-      <div id="phase-build" class="hidden">
-        <div class="phase-actions">
-          <button class="ghost-btn" id="btn-load-from-deckset">デッキセットからセットする</button>
-        </div>
-        <div id="load-deckset-panel" class="hidden" style="background:var(--panel); border:1px solid var(--edge); border-radius:4px; padding:14px; margin-bottom:18px;">
-          <label for="input-load-ds-name">名前（本人確認）</label>
-          <input type="text" id="input-load-ds-name" placeholder="デッキセットに登録した名前">
-          <button class="ghost-btn" id="btn-load-ds-fetch">読み込む</button>
-          <div id="load-ds-list" style="margin-top:12px;"></div>
-        </div>
-        <div class="deck-grid" id="deck-grid"></div>
-        <div class="phase-actions">
-          <button class="seal-btn" id="btn-deck-save" style="width:auto; padding:12px 22px;">デッキを保存</button>
-          <button class="ghost-btn" id="btn-deck-ready">準備完了にする</button>
-          <span class="ready-note" id="deck-error"></span>
-        </div>
-        <div class="ready-note" id="opponent-ready-note" style="margin-bottom:20px;"></div>
-      </div>
-
-      <!-- 対戦フェーズ -->
-      <div id="phase-battle" class="hidden">
-        <div class="score-bar">
-          <div class="score-side">
-            <div class="side-name" id="score-name-p1">プレイヤー1</div>
-            <div class="pips" id="pips-p1"></div>
+          <!-- 編成フェーズ -->
+          <div id="phase-build" class="hidden">
+            <div class="phase-actions">
+              <button class="ghost-btn" id="btn-load-from-deckset">デッキセットからセットする</button>
+            </div>
+            <div id="load-deckset-panel" class="hidden" style="background:var(--panel); border:1px solid var(--edge); border-radius:4px; padding:14px; margin-bottom:18px;">
+              <label for="input-load-ds-name">名前（本人確認）</label>
+              <input type="text" id="input-load-ds-name" placeholder="デッキセットに登録した名前">
+              <button class="ghost-btn" id="btn-load-ds-fetch">読み込む</button>
+              <div id="load-ds-list" style="margin-top:12px;"></div>
+            </div>
+            <div class="deck-grid" id="deck-grid"></div>
+            <div class="phase-actions">
+              <button class="seal-btn" id="btn-deck-save" style="width:auto; padding:12px 22px;">デッキを保存</button>
+              <button class="ghost-btn" id="btn-deck-ready">準備完了にする</button>
+              <span class="ready-note" id="deck-error"></span>
+            </div>
+            <div class="ready-note" id="opponent-ready-note" style="margin-bottom:20px;"></div>
           </div>
-          <div class="turn-mid" id="turn-indicator"></div>
-          <div class="score-side">
-            <div class="side-name" id="score-name-p2">プレイヤー2</div>
-            <div class="pips" id="pips-p2"></div>
+
+          <!-- 対戦フェーズ -->
+          <div id="phase-battle" class="hidden">
+            <div class="score-bar">
+              <div class="score-side">
+                <div class="side-name" id="score-name-p1">プレイヤー1</div>
+                <div class="pips" id="pips-p1"></div>
+              </div>
+              <div class="turn-mid" id="turn-indicator"></div>
+              <div class="score-side">
+                <div class="side-name" id="score-name-p2">プレイヤー2</div>
+                <div class="pips" id="pips-p2"></div>
+              </div>
+            </div>
+
+            <div class="ee-bar" id="ee-bar"></div>
+
+            <!-- 特化タイプの性質選択（試合開始時、該当者のみ） -->
+            <div id="mimic-select-panel" class="hidden">
+              <h3>特化タイプの性質を選んでください（秘匿）</h3>
+              <p class="ready-note">あなたのデッキの特化🟣カードが、攻撃🔴・速度🔵・防御🟢のどの性質を借りるか、試合開始時に一度だけ決めます。</p>
+              <div class="role-grid" id="mimic-choice-buttons">
+                <div class="role-btn" data-mimic="atk">攻撃🔴の性質</div>
+                <div class="role-btn" data-mimic="spd">速度🔵の性質</div>
+                <div class="role-btn" data-mimic="def">防御🟢の性質</div>
+              </div>
+            </div>
+            <div id="mimic-wait-note" class="ready-note hidden">相手が特化タイプの性質を秘密に選んでいます…</div>
+
+            <div class="battle-grid">
+              <div class="battle-left">
+                <!-- セレクトフェーズ -->
+                <div class="hand-section" id="my-hand-section">
+                  <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
+                  <div class="hand-cards" id="my-hand"></div>
+                  <div style="margin-top:10px;">
+                    <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
+                    <span class="ready-note" id="lock-status"></span>
+                  </div>
+                </div>
+
+                <div class="hand-section" id="opp-hand-section">
+                  <p class="opp-hand-note" id="opp-hand-note"></p>
+                </div>
+
+                <!-- イニシアチブ：先後選択権がある側にだけ表示 -->
+                <div id="initiative-panel" class="hidden">
+                  <h3>イニシアチブ</h3>
+                  <p class="ready-note" id="initiative-note"></p>
+                  <div class="phase-actions" id="initiative-choice-buttons"></div>
+                </div>
+
+                <div class="dice-area">
+                  <div class="dice-face" id="dice-face">–</div>
+                  <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
+                  <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
+                </div>
+              </div>
+
+              <div class="battle-right">
+                <!-- オープン（場） -->
+                <div class="hand-section">
+                  <h3>場（オープン）</h3>
+                  <div class="reveal-board" id="field-board"></div>
+                </div>
+
+                <!-- バトル：この番の裁定 -->
+                <div class="judge-panel hidden" id="judge-panel-wrap">
+                  <h3>バトル（この番の裁定）</h3>
+                  <div class="judge-row">
+                    <label style="margin:0;">先後／タイプ相性</label>
+                    <span id="advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
+                  </div>
+                  <div class="judge-row">
+                    <label style="margin:0;">P1 数字補正</label>
+                    <input type="number" id="adj-p1" value="0">
+                    <label style="margin:0;">P2 数字補正</label>
+                    <input type="number" id="adj-p2" value="0">
+                  </div>
+                  <p class="ready-note" id="type-ability-note"></p>
+                  <div class="judge-row">
+                    <label style="margin:0;">獲得ポイント（win）</label>
+                    <input type="number" id="award-points" value="1" min="0">
+                  </div>
+                  <div class="judge-row winner-radios" id="winner-radios"></div>
+                  <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する（エンド）</button>
+                  <span class="ready-note" id="confirm-note"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 決着フェーズ -->
+          <div id="phase-result" class="hidden">
+            <div class="result-banner">
+              <div class="rb-title" id="result-title"></div>
+              <div class="ready-note" id="result-sub"></div>
+              <div class="result-actions">
+                <button class="ghost-btn" id="btn-rematch">同じデッキで再戦</button>
+                <button class="ghost-btn" id="btn-rebuild">編成からやり直す</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="ee-bar" id="ee-bar"></div>
-
-        <!-- 特化タイプの性質選択（試合開始時、該当者のみ） -->
-        <div id="mimic-select-panel" class="hidden">
-          <h3>特化タイプの性質を選んでください（秘匿）</h3>
-          <p class="ready-note">あなたのデッキの特化🟣カードが、攻撃🔴・速度🔵・防御🟢のどの性質を借りるか、試合開始時に一度だけ決めます。</p>
-          <div class="role-grid" id="mimic-choice-buttons">
-            <div class="role-btn" data-mimic="atk">攻撃🔴の性質</div>
-            <div class="role-btn" data-mimic="spd">速度🔵の性質</div>
-            <div class="role-btn" data-mimic="def">防御🟢の性質</div>
+        <div class="table-side">
+          <div class="log-panel">
+            <h3>卓上の記録</h3>
+            <div class="log-list" id="log-list"></div>
+            <div class="log-form">
+              <input type="text" id="input-log" placeholder="宣言・雑談などを記録する">
+              <button class="ghost-btn" id="btn-log-send">記す</button>
+            </div>
           </div>
-        </div>
-        <div id="mimic-wait-note" class="ready-note hidden">相手が特化タイプの性質を秘密に選んでいます…</div>
-
-        <!-- セレクトフェーズ -->
-        <div class="hand-section" id="my-hand-section">
-          <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
-          <div class="hand-cards" id="my-hand"></div>
-          <div style="margin-top:10px;">
-            <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
-            <span class="ready-note" id="lock-status"></span>
-          </div>
-        </div>
-
-        <div class="hand-section" id="opp-hand-section">
-          <p class="opp-hand-note" id="opp-hand-note"></p>
-        </div>
-
-        <!-- イニシアチブ：先後選択権がある側にだけ表示 -->
-        <div id="initiative-panel" class="hidden">
-          <h3>イニシアチブ</h3>
-          <p class="ready-note" id="initiative-note"></p>
-          <div class="phase-actions" id="initiative-choice-buttons"></div>
-        </div>
-
-        <!-- オープン（場） -->
-        <div class="hand-section">
-          <h3>場（オープン）</h3>
-          <div class="reveal-board" id="field-board"></div>
-        </div>
-
-        <!-- バトル：この番の裁定 -->
-        <div class="judge-panel hidden" id="judge-panel-wrap">
-          <h3>バトル（この番の裁定）</h3>
-          <div class="judge-row">
-            <label style="margin:0;">先後／タイプ相性</label>
-            <span id="advantage-note" style="font-size:12px; color:var(--ink-dim);"></span>
-          </div>
-          <div class="judge-row">
-            <label style="margin:0;">P1 数字補正</label>
-            <input type="number" id="adj-p1" value="0">
-            <label style="margin:0;">P2 数字補正</label>
-            <input type="number" id="adj-p2" value="0">
-          </div>
-          <p class="ready-note" id="type-ability-note"></p>
-          <div class="judge-row">
-            <label style="margin:0;">獲得ポイント（win）</label>
-            <input type="number" id="award-points" value="1" min="0">
-          </div>
-          <div class="judge-row winner-radios" id="winner-radios"></div>
-          <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する（エンド）</button>
-          <span class="ready-note" id="confirm-note"></span>
-        </div>
-
-        <div class="dice-area">
-          <div class="dice-face" id="dice-face">–</div>
-          <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
-          <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
-        </div>
-      </div>
-
-      <!-- 決着フェーズ -->
-      <div id="phase-result" class="hidden">
-        <div class="result-banner">
-          <div class="rb-title" id="result-title"></div>
-          <div class="ready-note" id="result-sub"></div>
-          <div class="result-actions">
-            <button class="ghost-btn" id="btn-rematch">同じデッキで再戦</button>
-            <button class="ghost-btn" id="btn-rebuild">編成からやり直す</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="log-panel">
-        <h3>卓上の記録</h3>
-        <div class="log-list" id="log-list"></div>
-        <div class="log-form">
-          <input type="text" id="input-log" placeholder="宣言・雑談などを記録する">
-          <button class="ghost-btn" id="btn-log-send">記す</button>
         </div>
       </div>
 
@@ -662,8 +674,7 @@
       oppHandSection.classList.add('hidden');
     } else {
       myHandSection.classList.add('hidden');
-      oppHandSection.classList.remove('hidden');
-      document.getElementById('opp-hand-note').textContent = 'お互い秘密にカードを選んでいます（セレクト中）…';
+      oppHandSection.classList.add('hidden');
     }
 
     const p1Locked = latestBattle.picks && latestBattle.picks.player1 && latestBattle.picks.player1.locked;
@@ -671,9 +682,13 @@
     const bothLocked = p1Locked && p2Locked;
 
     // --- オープンフェーズ：場に公開 ---
-    document.getElementById('field-board').innerHTML = bothLocked
-      ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex]) + revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex])
-      : `<div class="field-slot-empty">${p1Locked?'':escapeHtml(memberName('player1'))+'：検討中…　'}${p2Locked?'':escapeHtml(memberName('player2'))+'：検討中…'}</div>`;
+    // ジャッジは各プレイヤーが選んだ時点で即座にカードが分かる。それ以外（プレイヤー・観戦・閲覧のみ）は両者が選び終えるまで伏せられたまま。
+    const isJudge = myRole === 'judge';
+    const p1Reveal = isJudge ? p1Locked : bothLocked;
+    const p2Reveal = isJudge ? p2Locked : bothLocked;
+    document.getElementById('field-board').innerHTML =
+      (p1Reveal ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex]) : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`) +
+      (p2Reveal ? revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex]) : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`);
 
     const face = document.getElementById('dice-face');
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
