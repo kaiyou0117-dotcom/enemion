@@ -181,7 +181,9 @@
 
                 <div class="dice-area">
                   <div class="dice-face" id="dice-face">–</div>
-                  <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
+                  <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
+                  <input type="number" id="dice-sides" value="4" min="1" style="width:64px; margin-bottom:0;">
+                  <button class="ghost-btn" id="btn-roll-dice">振る</button>
                   <input type="text" id="dice-purpose" placeholder="何のためのダイスか（例：毒状態の経過判定）" style="width:220px; margin-bottom:0;">
                   <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
                 </div>
@@ -735,7 +737,7 @@
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
     const purposeNote = document.getElementById('dice-note');
     if(latestBattle.lastRoll && latestBattle.lastRoll.purpose){
-      purposeNote.textContent = `直近の用途: ${latestBattle.lastRoll.purpose}（${latestBattle.lastRoll.by}）`;
+      purposeNote.textContent = `直近の用途: ${latestBattle.lastRoll.purpose}（1d${latestBattle.lastRoll.sides||4}／${latestBattle.lastRoll.by}）`;
     }
 
     if(!bothLocked){
@@ -913,13 +915,17 @@
   });
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
-    const value = Math.floor(Math.random() * 4) + 1; // 1d4
+    const sidesInput = document.getElementById('dice-sides');
+    let sides = parseInt(sidesInput.value, 10);
+    if(!Number.isFinite(sides) || sides < 1){ sides = 1; }
+    sidesInput.value = sides;
+    const value = Math.floor(Math.random() * sides) + 1; // 1d{sides}
     const purposeInput = document.getElementById('dice-purpose');
     const purpose = purposeInput.value.trim();
-    await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, by: myName, purpose: purpose || null, ts: Date.now() });
+    await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, sides, by: myName, purpose: purpose || null, ts: Date.now() });
     const logText = purpose
-      ? `1d4を振り、${value}が出た。（用途: ${purpose}）`
-      : `1d4を振り、${value}が出た。`;
+      ? `1d${sides}を振り、${value}が出た。（用途: ${purpose}）`
+      : `1d${sides}を振り、${value}が出た。`;
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: logText, ts: Date.now() });
   });
 
