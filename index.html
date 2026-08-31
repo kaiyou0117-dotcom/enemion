@@ -785,7 +785,8 @@
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     if(card.number > myEE) return;
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, locked: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
+    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
     myHandSelection = null;
   });
 
@@ -905,13 +906,18 @@
 
     const finished = newPoints.player1 >= 3 || newPoints.player2 >= 3;
 
+    const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
+
     const updates = {};
     updates['battle/points'] = newPoints;
     updates['battle/picks'] = { player1: null, player2: null };
     updates['battle/firstSlot'] = null;
     updates['battle/initiativePending'] = null;
     updates['battle/turn'] = latestBattle.turn + 1;
-    updates['battle/ee'] = { player1: 2 + eeBonus.player1, player2: 2 + eeBonus.player2 };
+    updates['battle/ee'] = {
+      player1: currentEe.player1 + 2 + eeBonus.player1,
+      player2: currentEe.player2 + 2 + eeBonus.player2
+    };
     updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
 
     if(finished){
