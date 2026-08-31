@@ -92,7 +92,9 @@
 
             <div class="dice-area">
               <div class="dice-face" id="solo-dice-face">–</div>
-              <button class="ghost-btn" id="btn-solo-roll-dice">1d4を振る</button>
+              <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
+              <input type="number" id="solo-dice-sides" value="4" min="1" style="width:64px; margin-bottom:0;">
+              <button class="ghost-btn" id="btn-solo-roll-dice">振る</button>
               <input type="text" id="solo-dice-purpose" placeholder="何のためのダイスか（例：毒状態の経過判定）" style="width:220px; margin-bottom:0;">
               <span class="dice-note" id="solo-dice-note">効果の判定などに使う汎用ダイスです</span>
             </div>
@@ -326,7 +328,7 @@
     const face = document.getElementById('solo-dice-face');
     face.textContent = lastRoll ? lastRoll.value : '–';
     if(lastRoll && lastRoll.purpose){
-      document.getElementById('solo-dice-note').textContent = `直近の用途: ${lastRoll.purpose}`;
+      document.getElementById('solo-dice-note').textContent = `直近の用途: ${lastRoll.purpose}（1d${lastRoll.sides||4}）`;
     }
 
     // --- イニシアチブ ---
@@ -421,9 +423,13 @@
   });
 
   document.getElementById('btn-solo-roll-dice').addEventListener('click', () => {
-    const value = Math.floor(Math.random()*4) + 1;
+    const sidesInput = document.getElementById('solo-dice-sides');
+    let sides = parseInt(sidesInput.value, 10);
+    if(!Number.isFinite(sides) || sides < 1){ sides = 1; }
+    sidesInput.value = sides;
+    const value = Math.floor(Math.random()*sides) + 1;
     const purpose = document.getElementById('solo-dice-purpose').value.trim();
-    lastRoll = { value, purpose: purpose || null };
+    lastRoll = { value, sides, purpose: purpose || null };
     renderSoloBattle();
   });
 
