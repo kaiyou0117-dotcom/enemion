@@ -100,6 +100,83 @@ export function buildEffectSelectOptions(){
       return `<optgroup label="${ptGroupLabel(pt)}">${opts}</optgroup>`;
     }).join('');
   }
+
+// 画面中央にモーダルカードを開き、検索・絞り込みしながら効果を1つ選ばせる。
+// 選ばれた効果名を onSelect(name) に渡してモーダルを閉じる。
+export function openEffectPickerModal(onSelect){
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal">
+        <div class="picker-header">
+          <span>効果を選ぶ</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <input type="text" class="picker-search" placeholder="効果名や内容で検索…">
+        <div class="picker-filters">
+          <button type="button" class="picker-filter-btn selected" data-filter="all">すべて</button>
+          <button type="button" class="picker-filter-btn" data-filter="ability">〈異能〉</button>
+          <button type="button" class="picker-filter-btn" data-filter="skill">〈技能〉</button>
+          <button type="button" class="picker-filter-btn" data-filter="neg">デメリット</button>
+        </div>
+        <div class="picker-grid"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const grid = overlay.querySelector('.picker-grid');
+    const searchInput = overlay.querySelector('.picker-search');
+    let activeFilter = 'all';
+
+    function renderGrid(){
+      const q = searchInput.value.trim();
+      const filtered = EFFECTS_CATALOG.filter(e => {
+        if(activeFilter === 'ability' && e.category !== 'ability') return false;
+        if(activeFilter === 'skill' && e.category !== 'skill') return false;
+        if(activeFilter === 'neg' && e.pt >= 0) return false;
+        if(q && !(e.name.includes(q) || e.text.includes(q))) return false;
+        return true;
+      });
+      grid.innerHTML = filtered.map(e => `
+        <button type="button" class="picker-card" data-name="${escapeHtml(e.name)}">
+          <div class="picker-card-head">
+            <span class="picker-card-name">${escapeHtml(e.name)}${e.category==='ability'?'〈異能〉':e.category==='skill'?'〈技能〉':''}${e.ex?'（EX）':''}</span>
+            <span class="picker-card-pt">${e.pt}pt</span>
+          </div>
+          <div class="picker-card-text">${escapeHtml(e.text)}</div>
+        </button>
+      `).join('') || '<p class="picker-empty">該当する効果が見つかりません。</p>';
+
+      grid.querySelectorAll('.picker-card').forEach(btn => {
+        btn.addEventListener('click', () => {
+          onSelect(btn.dataset.name);
+          close();
+        });
+      });
+    }
+
+    function close(){
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+    searchInput.addEventListener('input', renderGrid);
+    overlay.querySelectorAll('.picker-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        overlay.querySelectorAll('.picker-filter-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        activeFilter = btn.dataset.filter;
+        renderGrid();
+      });
+    });
+
+    renderGrid();
+    searchInput.focus();
+  }
 export function cardFormHtml(idx, card, effectsArr, isReadOnly){
     const used = effectsArr.reduce((sum, n) => { const e = effectByName(n); return sum + (e ? e.pt : 0); }, 0);
     const cardNumber = card.number;
@@ -148,11 +225,7 @@ export function cardFormHtml(idx, card, effectsArr, isReadOnly){
       ${chipsHtml}
       ${isReadOnly ? '' : `
         <div class="effect-add-row">
-          <select data-effect-select data-i="${idx}">
-            <option value="">効果を選んで追加…</option>
-            ${buildEffectSelectOptions()}
-          </select>
-          <button type="button" class="ghost-btn" data-add-effect data-i="${idx}">追加</button>
+          <button type="button" class="ghost-btn" data-open-effect-picker data-i="${idx}">＋ 効果を選ぶ</button>
         </div>
       `}
 
@@ -204,11 +277,10 @@ export function renderCardGrid(gridEl, cards, effectsState, isReadOnly, callback
         if(callbacks.onImageChange) callbacks.onImageChange(idx, null);
       });
     });
-    gridEl.querySelectorAll('[data-add-effect]').forEach(btn => {
+    gridEl.querySelectorAll('[data-open-effect-picker]').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.i, 10);
-        const select = gridEl.querySelector(`[data-effect-select][data-i="${idx}"]`);
-        callbacks.onAddEffect(idx, select.value);
+        openEffectPickerModal((name) => callbacks.onAddEffect(idx, name));
       });
     });
     gridEl.querySelectorAll('[data-remove-effect]').forEach(btn => {

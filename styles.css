@@ -280,6 +280,105 @@
   }
   .pt-budget.over{ color: var(--red-glow); }
   .effect-add-row{ display:flex; gap:6px; margin-bottom:10px; }
+
+  /* ---- 効果選択モーダル ---- */
+  .picker-overlay{
+    position: fixed;
+    inset: 0;
+    background: rgba(10,7,6,0.72);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index: 500;
+    padding: 20px;
+  }
+  .picker-modal{
+    width: min(760px, 100%);
+    max-height: 84vh;
+    display:flex;
+    flex-direction:column;
+    background: var(--panel);
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    animation: picker-pop .18s ease-out;
+  }
+  @keyframes picker-pop{
+    from{ opacity:0; transform: scale(0.94) translateY(6px); }
+    to{ opacity:1; transform: scale(1) translateY(0); }
+  }
+  .picker-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 14px 18px;
+    background: linear-gradient(180deg, var(--red), #8f2c22);
+    color: var(--paper);
+    font-family: var(--font-display);
+    font-size: 17px;
+    border-radius: 6px 6px 0 0;
+  }
+  .picker-close{
+    background:none;
+    border:none;
+    color: var(--paper);
+    font-size: 16px;
+    cursor:pointer;
+    line-height:1;
+    padding: 4px;
+  }
+  .picker-search{
+    margin: 14px 18px 0;
+    width: auto;
+  }
+  .picker-filters{
+    display:flex;
+    gap: 8px;
+    margin: 10px 18px 0;
+    flex-wrap: wrap;
+  }
+  .picker-filter-btn{
+    background: var(--panel-2);
+    border: 1px solid var(--edge);
+    color: var(--ink-dim);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor:pointer;
+  }
+  .picker-filter-btn.selected{
+    border-color: var(--gold);
+    color: var(--paper);
+    background: rgba(201,162,39,0.15);
+  }
+  .picker-grid{
+    margin: 14px 18px 18px;
+    overflow-y: auto;
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .picker-card{
+    text-align:left;
+    background: var(--panel-2);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 10px 12px;
+    cursor:pointer;
+    transition: border-color .12s ease, transform .05s ease;
+    color: var(--ink);
+  }
+  .picker-card:hover{ border-color: var(--gold); transform: translateY(-1px); }
+  .picker-card-head{
+    display:flex;
+    justify-content:space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .picker-card-name{ font-size: 13px; color: var(--paper); }
+  .picker-card-pt{ font-family: var(--font-mono); font-size: 11px; color: var(--gold); white-space:nowrap; }
+  .picker-card-text{ font-size: 11px; color: var(--ink-dim); line-height:1.5; }
+  .picker-empty{ grid-column: 1/-1; color: var(--ink-dim); font-size: 13px; text-align:center; padding: 20px; }
   .effect-add-row select{ margin-bottom:0; flex:1; }
   .effect-add-row button{ white-space:nowrap; }
   .effect-chip{
