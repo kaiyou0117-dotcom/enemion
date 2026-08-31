@@ -138,6 +138,10 @@
     document.getElementById('deckset-error').textContent = '';
     document.getElementById('deckset-list-wrap').classList.add('hidden');
     document.getElementById('deckset-editor').classList.remove('hidden');
+    // 前に開いていた別デッキの入力内容が残ったままだと、
+    // renderDsEditor内のsyncCardFieldsFromDomがその古い値を新デッキへ書き戻してしまうため、
+    // 先にグリッドを空にしてから描画する。
+    document.getElementById('deckset-grid').innerHTML = '';
     renderDsEditor();
   }
 
