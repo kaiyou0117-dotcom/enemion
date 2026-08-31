@@ -153,6 +153,7 @@
                 <div class="dice-area">
                   <div class="dice-face" id="dice-face">–</div>
                   <button class="ghost-btn" id="btn-roll-dice">1d4を振る</button>
+                  <input type="text" id="dice-purpose" placeholder="何のためのダイスか（例：毒状態の経過判定）" style="width:220px; margin-bottom:0;">
                   <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
                 </div>
               </div>
@@ -227,7 +228,7 @@
     sanitizeKey, escapeHtml, emptyDeck, emptyCards, effectByName,
     ptGroupLabel, buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, typeAdvantage, showFatalError,
-    syncCardFieldsFromDom
+    syncCardFieldsFromDom, resizeImageToDataUrl
   } from './shared.js';
 
   // ---- DOM refs ----
@@ -692,6 +693,10 @@
 
     const face = document.getElementById('dice-face');
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
+    const purposeNote = document.getElementById('dice-note');
+    if(latestBattle.lastRoll && latestBattle.lastRoll.purpose){
+      purposeNote.textContent = `直近の用途: ${latestBattle.lastRoll.purpose}（${latestBattle.lastRoll.by}）`;
+    }
 
     if(!bothLocked){
       document.getElementById('initiative-panel').classList.add('hidden');
@@ -807,8 +812,13 @@
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
     const value = Math.floor(Math.random() * 4) + 1; // 1d4
-    await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, by: myName, ts: Date.now() });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `1d4を振り、${value}が出た。`, ts: Date.now() });
+    const purposeInput = document.getElementById('dice-purpose');
+    const purpose = purposeInput.value.trim();
+    await set(ref(db, `rooms/${roomId}/battle/lastRoll`), { value, by: myName, purpose: purpose || null, ts: Date.now() });
+    const logText = purpose
+      ? `1d4を振り、${value}が出た。（用途: ${purpose}）`
+      : `1d4を振り、${value}が出た。`;
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: logText, ts: Date.now() });
   });
 
   function renderJudgePanel(){
