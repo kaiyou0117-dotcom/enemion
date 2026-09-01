@@ -118,6 +118,13 @@
             <div class="hand-section" id="solo-hand-section">
               <h3>あなたの手札（セレクト）</h3>
               <div class="hand-cards" id="solo-my-hand"></div>
+              <div id="solo-teleport-panel" class="hidden" style="margin-top:10px; background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:12px;">
+                <p class="ready-note" style="margin-bottom:8px;">このカードは【テレポート】を持っています。デッキの他のカードと入れ替えて出せます（数字とタイプは入れ替え先のものになります。使うと次のターンEE-1、このカードは次に出す時1回テレポートを使えなくなります）。</p>
+                <select id="solo-teleport-target-select" style="margin-bottom:8px;"></select>
+                <div style="display:flex; gap:8px;">
+                  <button class="ghost-btn" id="btn-solo-lock-teleport">テレポートで入れ替えて出す</button>
+                </div>
+              </div>
               <div style="margin-top:10px;">
                 <button class="ghost-btn" id="btn-solo-lock" disabled>このカードを伏せて選ぶ</button>
                 <span class="ready-note" id="solo-lock-status"></span>
@@ -212,14 +219,28 @@
   let mySpecialMimic = null;
   let oppSpecialMimic = null;
   let myHandSelection = null;
-  let picks = { me: null, opp: null }; // {cardIndex}
+  let picks = { me: null, opp: null }; // {cardIndex, teleportFrom}
   let firstSlot = null; // 'me'|'opp'
   let initiativePending = null; // 'me'|'opp'|null
   let judgePanelTurnMark = null;
   let lastRoll = null;
+  let myTeleportLock = {}; // cardIndex -> true（次に出す時1回テレポート不可）
+  let oppTeleportLock = {};
 
   function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
   function effectiveType(card, mimic){ return card.type === 'spc' ? (mimic || null) : card.type; }
+
+  // テレポート効果で入れ替えている場合、数字・タイプは入れ替え先のカードのものを反映する
+  function getBattleCard(who){
+    const deck = who === 'me' ? myDeck : oppDeck;
+    const pick = picks[who];
+    const originalCard = deck[pick.cardIndex];
+    if(pick.teleportFrom !== null && pick.teleportFrom !== undefined){
+      const sourceCard = deck[pick.teleportFrom];
+      return { ...originalCard, number: sourceCard.number, type: sourceCard.type, _teleported: true, _teleportSource: sourceCard };
+    }
+    return originalCard;
+  }
 
   document.getElementById('btn-solo-load').addEventListener('click', async () => {
     const nameRaw = document.getElementById('input-solo-name').value.trim();
@@ -415,6 +436,8 @@
     initiativePending = null;
     judgePanelTurnMark = null;
     lastRoll = null;
+    myTeleportLock = {};
+    oppTeleportLock = {};
 
     document.getElementById('solo-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
     opponentSetupScreen.classList.add('hidden');
@@ -479,10 +502,22 @@
     document.getElementById('btn-solo-lock').disabled = !canLock;
     document.getElementById('solo-lock-status').textContent = ee.me < 1 ? 'EEが足りず、出せるカードがありません。' : '';
 
+    // --- テレポート効果の選択UI ---
+    const teleportPanel = document.getElementById('solo-teleport-panel');
+    const canOfferTeleport = !picks.me && myHandSelection !== null
+      && myDeck[myHandSelection].number <= ee.me
+      && (myDeck[myHandSelection].effectNames||[]).includes('テレポート')
+      && !myTeleportLock[myHandSelection];
+    teleportPanel.classList.toggle('hidden', !canOfferTeleport);
+    if(canOfferTeleport){
+      const sel = document.getElementById('solo-teleport-target-select');
+      sel.innerHTML = myDeck.map((c, i) => i === myHandSelection ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+    }
+
     // --- オープン ---
     const board = document.getElementById('solo-field-board');
     if(picks.me && picks.opp){
-      board.innerHTML = revealCardHtml('あなた', myDeck[picks.me.cardIndex]) + revealCardHtml('仮想の相手', oppDeck[picks.opp.cardIndex]);
+      board.innerHTML = revealCardHtml('あなた', getBattleCard('me')) + revealCardHtml('仮想の相手', getBattleCard('opp'));
     } else {
       board.innerHTML = '<div class="field-slot-empty">カードを選んで「このカードを伏せて選ぶ」を押してください</div>';
       document.getElementById('solo-initiative-panel').classList.add('hidden');
@@ -524,8 +559,8 @@
 
   function resolveInitiativeIfNeeded(){
     if(firstSlot || initiativePending) return;
-    const myCard = myDeck[picks.me.cardIndex];
-    const oppCard = oppDeck[picks.opp.cardIndex];
+    const myCard = getBattleCard('me');
+    const oppCard = getBattleCard('opp');
     const adv = typeAdvantage(myCard.type, oppCard.type);
     const advSlot = adv==='A' ? 'me' : adv==='B' ? 'opp' : null;
 
@@ -558,6 +593,7 @@
       return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
+    const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】数字${card._teleportSource.number}のカード「${escapeHtml(card._teleportSource.name)||'無題'}」の性質を反映中</div>` : '';
     return `
       <div class="reveal-card">
         <div class="rc-side">${escapeHtml(sideName)}</div>
@@ -565,9 +601,24 @@
         <div class="rc-name">${escapeHtml(card.name)}</div>
         <div class="rc-num">${card.number}</div>
         <div class="rc-meta">${escapeHtml(card.species)} ／ ${TYPE_LABEL[card.type]}</div>
+        ${teleportNote}
         ${effectsHtml ? `<div class="rc-effects">${effectsHtml}</div>` : ''}
       </div>
     `;
+  }
+
+  function botPlayTurn(){
+    // 仮想の相手は即座に、支払える中からランダムに選ぶ（まれにテレポートも使う）
+    const affordableOpp = oppDeck.map((c,i)=>i).filter(i => oppDeck[i].number <= ee.opp);
+    const oppIdx = affordableOpp.length ? randomChoice(affordableOpp) : randomChoice(oppDeck.map((c,i)=>i));
+    const oppCard = oppDeck[oppIdx];
+    ee.opp -= oppCard.number;
+    let teleportFrom = null;
+    if((oppCard.effectNames||[]).includes('テレポート') && !oppTeleportLock[oppIdx] && Math.random() < 0.5){
+      const others = oppDeck.map((c,i)=>i).filter(i => i !== oppIdx);
+      teleportFrom = randomChoice(others);
+    }
+    picks.opp = { cardIndex: oppIdx, teleportFrom };
   }
 
   document.getElementById('btn-solo-lock').addEventListener('click', () => {
@@ -575,15 +626,22 @@
     const card = myDeck[myHandSelection];
     if(card.number > ee.me) return;
     ee.me -= card.number;
-    picks.me = { cardIndex: myHandSelection };
+    picks.me = { cardIndex: myHandSelection, teleportFrom: null };
     myHandSelection = null;
+    botPlayTurn();
+    renderSoloBattle();
+  });
 
-    // 仮想の相手は即座に、支払える中からランダムに選ぶ
-    const affordableOpp = oppDeck.map((c,i)=>i).filter(i => oppDeck[i].number <= ee.opp);
-    const oppIdx = affordableOpp.length ? randomChoice(affordableOpp) : randomChoice(oppDeck.map((c,i)=>i));
-    ee.opp -= oppDeck[oppIdx].number;
-    picks.opp = { cardIndex: oppIdx };
-
+  document.getElementById('btn-solo-lock-teleport').addEventListener('click', () => {
+    if(myHandSelection === null) return;
+    const card = myDeck[myHandSelection];
+    if(card.number > ee.me || myTeleportLock[myHandSelection]) return;
+    const targetIdx = parseInt(document.getElementById('solo-teleport-target-select').value, 10);
+    if(!Number.isInteger(targetIdx)) return;
+    ee.me -= card.number;
+    picks.me = { cardIndex: myHandSelection, teleportFrom: targetIdx };
+    myHandSelection = null;
+    botPlayTurn();
     renderSoloBattle();
   });
 
@@ -599,8 +657,8 @@
   });
 
   function renderSoloJudgePanel(){
-    const myCard = myDeck[picks.me.cardIndex];
-    const oppCard = oppDeck[picks.opp.cardIndex];
+    const myCard = getBattleCard('me');
+    const oppCard = getBattleCard('opp');
     const adv = typeAdvantage(myCard.type, oppCard.type);
     const advSlot = adv==='A' ? 'me' : adv==='B' ? 'opp' : null;
     const advType = advSlot ? effectiveType(advSlot==='me'?myCard:oppCard, advSlot==='me'?mySpecialMimic:oppSpecialMimic) : null;
@@ -618,6 +676,8 @@
     } else if(advType === 'spd'){
       abilityText = `${advSlot==='me'?'あなた':'相手'}の速度タイプにより、先後を選択しました。`;
     }
+    if(myCard._teleported){ abilityText += `　あなたは【テレポート】で数字${myCard._teleportSource.number}のカードの性質を反映中。`; }
+    if(oppCard._teleported){ abilityText += `　相手は【テレポート】で数字${oppCard._teleportSource.number}のカードの性質を反映中。`; }
     document.getElementById('solo-type-ability-note').textContent = abilityText;
 
     const adjMeEl = document.getElementById('solo-adj-me');
@@ -654,8 +714,8 @@
     const winner = choice.value;
     const award = parseInt(document.getElementById('solo-award-points').value || '1', 10);
 
-    const myCard = myDeck[picks.me.cardIndex];
-    const oppCard = oppDeck[picks.opp.cardIndex];
+    const myCard = getBattleCard('me');
+    const oppCard = getBattleCard('opp');
     const adv = typeAdvantage(myCard.type, oppCard.type);
     const advSlot = adv==='A' ? 'me' : adv==='B' ? 'opp' : null;
     const advType = advSlot ? effectiveType(advSlot==='me'?myCard:oppCard, advSlot==='me'?mySpecialMimic:oppSpecialMimic) : null;
@@ -664,9 +724,18 @@
     if(winner === 'opp') points.opp += award;
 
     let eeBonusMe = 0, eeBonusOpp = 0;
-    if(advType === 'def' && advSlot === 'me') eeBonusMe = 1;
-    if(advType === 'def' && advSlot === 'opp') eeBonusOpp = 1;
-    ee = { me: ee.me + 2 + eeBonusMe, opp: ee.opp + 2 + eeBonusOpp };
+    if(advType === 'def' && advSlot === 'me') eeBonusMe += 1;
+    if(advType === 'def' && advSlot === 'opp') eeBonusOpp += 1;
+    if(myCard._teleported) eeBonusMe -= 1;
+    if(oppCard._teleported) eeBonusOpp -= 1;
+    ee = { me: Math.max(0, ee.me + 2 + eeBonusMe), opp: Math.max(0, ee.opp + 2 + eeBonusOpp) };
+
+    // テレポート使用時：出したカード自体は次に出す時1回テレポート不可にする。
+    // ロックが掛かっているカードが今回出された場合は、テレポートを使ったかに関わらずロックを解除する。
+    delete myTeleportLock[picks.me.cardIndex];
+    delete oppTeleportLock[picks.opp.cardIndex];
+    if(myCard._teleported) myTeleportLock[picks.me.cardIndex] = true;
+    if(oppCard._teleported) oppTeleportLock[picks.opp.cardIndex] = true;
 
     picks = { me:null, opp:null };
     firstSlot = null;
