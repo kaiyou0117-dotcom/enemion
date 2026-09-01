@@ -27,13 +27,54 @@
   <div id="select-screen" class="screen">
     <div class="ticket">
       <h1 class="title">ひとりで練習</h1>
-      <div class="ready-note" style="margin-bottom:16px;">保存したデッキセットの中から1つを使い、ランダムに手を出してくる仮想の相手と練習対戦します。</div>
+      <div class="ready-note" style="margin-bottom:16px;">保存したデッキセットの中から1つを使い、練習対戦します。</div>
 
       <label for="input-solo-name">名前（デッキセットの本人確認）</label>
       <input type="text" id="input-solo-name" placeholder="デッキセットに登録した名前">
       <button class="seal-btn" id="btn-solo-load" style="width:auto; padding:12px 22px;">デッキを呼び出す</button>
 
       <div id="solo-deck-list" style="margin-top:18px;"></div>
+    </div>
+  </div>
+
+  <!-- 相手デッキ設定画面 -->
+  <div id="opponent-setup-screen" class="screen hidden">
+    <div class="wrap wrap-wide">
+      <div class="wrap-head">
+        <h2>相手デッキの設定</h2>
+        <span class="room-code" id="opp-setup-my-deck-label"></span>
+      </div>
+
+      <div class="role-grid" style="max-width:520px;">
+        <div class="role-btn selected" id="opp-mode-random">ランダムな相手</div>
+        <div class="role-btn" id="opp-mode-custom">相手デッキをカスタマイズ</div>
+        <div class="role-btn" id="opp-mode-deckset">デッキセットから相手を選ぶ</div>
+      </div>
+
+      <!-- ランダムモード -->
+      <div id="opp-panel-random" style="margin-top:20px;">
+        <p class="ready-note">数字・種族・タイプ・効果をランダムに生成した相手と対戦します。</p>
+        <button class="seal-btn" id="btn-opp-start-random" style="width:auto; padding:12px 22px;">この設定で開始</button>
+      </div>
+
+      <!-- カスタムモード -->
+      <div id="opp-panel-custom" class="hidden" style="margin-top:20px;">
+        <div class="deck-grid" id="opp-editor-grid"></div>
+        <div class="phase-actions">
+          <button class="seal-btn" id="btn-opp-start-custom" style="width:auto; padding:12px 22px;">このデッキで開始</button>
+          <span class="ready-note" id="opp-editor-error"></span>
+        </div>
+      </div>
+
+      <!-- デッキセットから選ぶモード -->
+      <div id="opp-panel-deckset" class="hidden" style="margin-top:20px;">
+        <label for="input-opp-ds-name">相手デッキの持ち主の名前</label>
+        <input type="text" id="input-opp-ds-name" placeholder="デッキセットに登録した名前">
+        <button class="ghost-btn" id="btn-opp-ds-load">読み込む</button>
+        <div id="opp-ds-list" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="leave-link" id="btn-opp-setup-back">デッキを選び直す</div>
     </div>
   </div>
 
@@ -149,12 +190,19 @@
   import {
     db, ref, get,
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
-    sanitizeKey, escapeHtml, effectByName,
-    addEffectGeneric, typeAdvantage
+    sanitizeKey, escapeHtml, effectByName, emptyCards,
+    addEffectGeneric, typeAdvantage, renderCardGrid,
+    validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
 
   const selectScreen = document.getElementById('select-screen');
+  const opponentSetupScreen = document.getElementById('opponent-setup-screen');
   const battleScreen = document.getElementById('solo-battle-screen');
+
+  let chosenMyDeck = null; // 相手デッキ設定画面に来た時点で選んだ自分のデッキ
+  let oppMode = 'random'; // 'random'|'custom'|'deckset'
+  let oppEditorCards = null;
+  let oppEditorEffects = null;
 
   let myDeck = null;
   let oppDeck = null;
@@ -203,7 +251,123 @@
       listEl.querySelectorAll('[data-solo-use]').forEach(btn => {
         btn.addEventListener('click', () => {
           const deck = data[btn.dataset.soloUse];
-          startSoloBattle(deck);
+          selectMyDeck(deck);
+        });
+      });
+    } catch(err){
+      listEl.innerHTML = `<p class="ready-note">読み込みに失敗しました: ${escapeHtml(err.message||String(err))}</p>`;
+    }
+  });
+
+  // ============ 相手デッキ設定画面 ============
+  function selectMyDeck(deck){
+    chosenMyDeck = deck;
+    document.getElementById('opp-setup-my-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
+    selectScreen.classList.add('hidden');
+    opponentSetupScreen.classList.remove('hidden');
+    setOppMode('random');
+  }
+
+  document.getElementById('btn-opp-setup-back').addEventListener('click', () => {
+    opponentSetupScreen.classList.add('hidden');
+    selectScreen.classList.remove('hidden');
+    oppEditorCards = null;
+    oppEditorEffects = null;
+  });
+
+  function setOppMode(mode){
+    oppMode = mode;
+    ['random','custom','deckset'].forEach(m => {
+      document.getElementById(`opp-mode-${m}`).classList.toggle('selected', m === mode);
+      document.getElementById(`opp-panel-${m}`).classList.toggle('hidden', m !== mode);
+    });
+    if(mode === 'custom' && !oppEditorCards){
+      oppEditorCards = emptyCards();
+      oppEditorEffects = oppEditorCards.map(c => (c.effectNames||[]).slice());
+      renderOppEditor();
+    }
+  }
+  document.getElementById('opp-mode-random').addEventListener('click', () => setOppMode('random'));
+  document.getElementById('opp-mode-custom').addEventListener('click', () => setOppMode('custom'));
+  document.getElementById('opp-mode-deckset').addEventListener('click', () => setOppMode('deckset'));
+
+  document.getElementById('btn-opp-start-random').addEventListener('click', () => {
+    startSoloBattle(chosenMyDeck, generateOpponentDeck());
+  });
+
+  function renderOppEditor(){
+    const grid = document.getElementById('opp-editor-grid');
+    syncCardFieldsFromDom(grid, oppEditorCards);
+    renderCardGrid(grid, oppEditorCards, oppEditorEffects, false, {
+      onAddEffect: (idx, name) => {
+        const err = document.getElementById('opp-editor-error');
+        const cardNumber = idx + 1;
+        if(addEffectGeneric(oppEditorEffects, idx, name, cardNumber, err)){ renderOppEditor(); }
+      },
+      onRemoveEffect: (idx, name) => {
+        oppEditorEffects[idx] = oppEditorEffects[idx].filter(n => n !== name);
+        renderOppEditor();
+      },
+      onImageChange: (idx, dataUrl) => {
+        oppEditorCards[idx].image = dataUrl;
+        renderOppEditor();
+      }
+    });
+  }
+
+  document.getElementById('btn-opp-start-custom').addEventListener('click', () => {
+    const grid = document.getElementById('opp-editor-grid');
+    const err = document.getElementById('opp-editor-error');
+    err.textContent = '';
+    const cards = [0,1,2,3].map(idx => {
+      const get2 = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
+      return {
+        name: get2('name').trim(),
+        number: idx + 1,
+        species: get2('species'),
+        type: get2('type'),
+        effectNames: (oppEditorEffects[idx] || []).slice(),
+        flavor: get2('flavor'),
+        image: oppEditorCards[idx] ? (oppEditorCards[idx].image || null) : null
+      };
+    });
+    if(cards.some(c => !c.name)){ err.textContent = '全てのカードにカード名を入力してください。'; return; }
+    const wideError = validateDeckWide(cards);
+    if(wideError){ err.textContent = wideError; return; }
+    startSoloBattle(chosenMyDeck, cards);
+  });
+
+  document.getElementById('btn-opp-ds-load').addEventListener('click', async () => {
+    const nameRaw = document.getElementById('input-opp-ds-name').value.trim();
+    const listEl = document.getElementById('opp-ds-list');
+    if(!nameRaw){ listEl.innerHTML = '<p class="ready-note">名前を入力してください。</p>'; return; }
+    const nameKey = sanitizeKey(nameRaw);
+    listEl.innerHTML = '読み込み中…';
+    try{
+      const snap = await get(ref(db, `deckSets/${nameKey}/decks`));
+      const data = snap.exists() ? snap.val() : {};
+      const entries = Object.entries(data);
+      if(entries.length === 0){
+        listEl.innerHTML = '<p class="ready-note">この名前で保存されたデッキが見つかりません。</p>';
+        return;
+      }
+      listEl.innerHTML = '';
+      entries.forEach(([id, deck]) => {
+        const div = document.createElement('div');
+        div.className = 'member-card';
+        div.style.marginBottom = '8px';
+        const cardNames = (deck.cards||[]).map(c => c.name || '無題').join('／');
+        div.innerHTML = `
+          <div class="role-label">${escapeHtml(deck.label || '無題のデッキ')}</div>
+          <div class="member-name">${escapeHtml(cardNames)}</div>
+          <button type="button" class="ghost-btn" data-opp-ds-use="${id}" style="margin-top:8px;">この相手で開始</button>
+        `;
+        listEl.appendChild(div);
+      });
+      listEl.querySelectorAll('[data-opp-ds-use]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const deck = data[btn.dataset.oppDsUse];
+          startSoloBattle(chosenMyDeck, JSON.parse(JSON.stringify(deck.cards)));
         });
       });
     } catch(err){
@@ -234,14 +398,14 @@
     return cards;
   }
 
-  function startSoloBattle(deck){
+  function startSoloBattle(deck, oppCards){
     myDeck = JSON.parse(JSON.stringify(deck.cards));
-    oppDeck = generateOpponentDeck();
+    oppDeck = JSON.parse(JSON.stringify(oppCards));
     points = { me:0, opp:0 };
     turn = 1;
     ee = { me:2, opp:2 };
     mySpecialMimic = null;
-    oppSpecialMimic = myDeck.length ? null : null;
+    oppSpecialMimic = null;
     if(oppDeck.some(c => c.type === 'spc')){
       oppSpecialMimic = randomChoice(['atk','spd','def']); // 仮想の相手は即座に秘密裏に決める
     }
@@ -253,6 +417,7 @@
     lastRoll = null;
 
     document.getElementById('solo-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
+    opponentSetupScreen.classList.add('hidden');
     selectScreen.classList.add('hidden');
     battleScreen.classList.remove('hidden');
     document.getElementById('solo-phase-battle').classList.remove('hidden');
@@ -525,9 +690,11 @@
   }
 
   document.getElementById('btn-solo-rematch').addEventListener('click', () => {
-    oppDeck = generateOpponentDeck();
+    if(oppMode === 'random'){
+      oppDeck = generateOpponentDeck();
+    }
     oppSpecialMimic = oppDeck.some(c => c.type === 'spc') ? randomChoice(['atk','spd','def']) : null;
-    mySpecialMimic = myDeck.some(c => c.type === 'spc') ? null : null; // 特化があれば再度選び直す
+    mySpecialMimic = null; // 特化があれば再度選び直す
     points = { me:0, opp:0 };
     turn = 1;
     ee = { me:2, opp:2 };
