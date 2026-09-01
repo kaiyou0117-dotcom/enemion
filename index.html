@@ -132,6 +132,10 @@
                 <input type="number" id="admin-points-p2" style="width:70px;">
                 <button type="button" class="ghost-btn" id="btn-admin-apply-points">winを変更</button>
               </div>
+              <div class="judge-admin-row">
+                <button type="button" class="ghost-btn" id="btn-admin-swap-players">P1とP2の状態を入れ替える</button>
+                <span class="ready-note">途中退出→再入室で枠がずれてしまった時に使います（デッキ・EE・win・場の進行を丸ごと入れ替えます）。</span>
+              </div>
               <div class="judge-admin-lock-wrap">
                 <div>
                   <div class="judge-admin-lock-label" id="admin-lock-label-p1">プレイヤー1のカード</div>
@@ -406,7 +410,8 @@
         const div = document.createElement('div');
         div.className = 'log-item';
         const color = roleLogColor(item.role);
-        const avatarHtml = item.avatar ? `<img class="log-meta-avatar" src="${item.avatar}" alt="">` : '';
+        const member = Object.values(latestMembers).find(m => m.name === item.from && m.slot === item.role);
+        const avatarHtml = (member && member.avatar) ? `<img class="log-meta-avatar" src="${member.avatar}" alt="">` : '';
         div.innerHTML = `${avatarHtml}<span class="log-meta" style="color:${color};">${escapeHtml(item.from)}</span>${escapeHtml(item.text)}`;
         logList.appendChild(div);
       });
@@ -882,6 +887,36 @@
     p1Input.value = ''; p2Input.value = '';
   });
 
+  document.getElementById('btn-admin-swap-players').addEventListener('click', async () => {
+    if(!confirm('プレイヤー1とプレイヤー2の状態（デッキ・EE・win・場の進行）を丸ごと入れ替えます。よろしいですか？')) return;
+
+    const decksSnap = await get(ref(db, `rooms/${roomId}/decks`));
+    const decks = decksSnap.val() || {};
+    const battleSnap = await get(ref(db, `rooms/${roomId}/battle`));
+    const battle = battleSnap.val() || {};
+
+    const updates = {};
+    updates['decks/player1'] = decks.player2 || null;
+    updates['decks/player2'] = decks.player1 || null;
+
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards'];
+    perSlotFields.forEach(key => {
+      if(battle[key]){
+        updates[`battle/${key}`] = {
+          player1: battle[key].player2 ?? null,
+          player2: battle[key].player1 ?? null
+        };
+      }
+    });
+    ['firstSlot','initiativePending','winner'].forEach(key => {
+      if(battle[key] === 'player1') updates[`battle/${key}`] = 'player2';
+      else if(battle[key] === 'player2') updates[`battle/${key}`] = 'player1';
+    });
+
+    await update(ref(db, `rooms/${roomId}`), updates);
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:'プレイヤー1とプレイヤー2の状態（デッキ・EE・win・場の進行）を入れ替えた。', ts: Date.now() });
+  });
+
   function renderPips(id, points){
     const el = document.getElementById(id);
     el.innerHTML = '';
@@ -910,7 +945,7 @@
     if(card.number > myEE || myLocked[myHandSelection]) return;
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
     myHandSelection = null;
   });
 
@@ -926,7 +961,7 @@
     const logText = purpose
       ? `1d${sides}を振り、${value}が出た。（用途: ${purpose}）`
       : `1d${sides}を振り、${value}が出た。`;
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text: logText, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: logText, ts: Date.now() });
   });
 
   function renderJudgePanel(){
@@ -1114,7 +1149,7 @@
     const inputLog = document.getElementById('input-log');
     const text = inputLog.value.trim();
     if(!text) return;
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, avatar: myAvatarDataUrl || null, text, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text, ts: Date.now() });
     inputLog.value = '';
   }
 </script>
