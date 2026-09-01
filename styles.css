@@ -327,9 +327,9 @@
     line-height:1;
     padding: 4px;
   }
-  .picker-search{
+  input.picker-search{
+    width: calc(100% - 36px);
     margin: 14px 18px 0;
-    width: auto;
   }
   .picker-filters{
     display:flex;
