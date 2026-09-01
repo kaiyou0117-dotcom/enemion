@@ -709,7 +709,7 @@
       const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
       (myDeck.cards || []).forEach((card, idx) => {
         const div = document.createElement('div');
-        const isChosenThisTurn = pick && pick.locked && pick.cardIndex === idx;
+        const isChosenThisTurn = pick && pick.locked && (pick.teleportOriginIdx != null ? pick.teleportOriginIdx === idx : pick.cardIndex === idx);
         const isLockedByJudge = !!myLocked[idx];
         const affordable = card.number <= myEE && !isLockedByJudge;
         const isSelected = !pick && myHandSelection === idx;
@@ -725,7 +725,9 @@
       const canLock = !(pick && pick.locked) && myHandSelection !== null && myDeck.cards[myHandSelection].number <= myEE && !myLocked[myHandSelection];
       document.getElementById('btn-lock-card').disabled = !canLock;
       document.getElementById('lock-status').textContent = (pick && pick.locked)
-        ? `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`
+        ? (pick.teleportOriginIdx != null
+            ? `【テレポート】で数字${myDeck.cards[pick.cardIndex].number}のカードを呼び出しました。相手を待っています。`
+            : `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`)
         : (myEE < 1 ? 'EEが足りず、出せるカードがありません。' : '');
 
       // --- テレポート効果の選択UI ---
@@ -810,15 +812,15 @@
     renderJudgePanel();
   }
 
-  // テレポート効果で入れ替えている場合、数字・タイプは入れ替え先のカードのものを反映する
+  // テレポート発動時は、指定したデッキ内のカードが名前・数字・タイプ・効果すべてそのまま場に来る（一部の数値だけ借りるのではない）
   function getBattleCard(slot){
     const pick = latestBattle.picks[slot];
-    const originalCard = latestDecks[slot].cards[pick.cardIndex];
-    if(pick.teleportFrom !== null && pick.teleportFrom !== undefined){
-      const sourceCard = latestDecks[slot].cards[pick.teleportFrom];
-      return { ...originalCard, number: sourceCard.number, type: sourceCard.type, _teleported: true, _teleportSource: sourceCard };
+    const card = latestDecks[slot].cards[pick.cardIndex];
+    if(pick.teleportOriginIdx !== null && pick.teleportOriginIdx !== undefined){
+      const originCard = latestDecks[slot].cards[pick.teleportOriginIdx];
+      return { ...card, _teleported: true, _teleportOrigin: originCard };
     }
-    return originalCard;
+    return card;
   }
 
   function resolveInitiativeIfNeeded(){
@@ -976,7 +978,7 @@
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
     if(card.number > myEE || myLocked[myHandSelection]) return;
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportFrom: null, locked: true });
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportOriginIdx: null, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
     myHandSelection = null;
@@ -985,17 +987,18 @@
   document.getElementById('btn-lock-teleport').addEventListener('click', async () => {
     if(myHandSelection === null) return;
     const myDeck = latestDecks[myRole];
-    const card = myDeck.cards[myHandSelection];
+    const originCard = myDeck.cards[myHandSelection];
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
     const myTeleportLock = (latestBattle.teleportLock && latestBattle.teleportLock[myRole]) || {};
-    if(card.number > myEE || myLocked[myHandSelection] || myTeleportLock[myHandSelection]) return;
+    if(originCard.number > myEE || myLocked[myHandSelection] || myTeleportLock[myHandSelection]) return;
     const targetIdx = parseInt(document.getElementById('teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
     const targetCard = myDeck.cards[targetIdx];
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportFrom: targetIdx, locked: true });
-    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】で「${card.name||'無題'}」と数字${targetCard.number}のカード「${targetCard.name||'無題'}」を入れ替えて出した。`, ts: Date.now() });
+    // 場に来るのは呼び出された側のカードそのもの（名前・数字・タイプ・効果すべて）。EEコストは元のカードの数字分を支払う。
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: myHandSelection, locked: true });
+    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - originCard.number });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
     myHandSelection = null;
   });
 
@@ -1038,8 +1041,8 @@
     } else if(advType === 'spd'){
       abilityText = `${memberName(advSlot)}の速度タイプにより、先後を選択しました。`;
     }
-    if(p1Card._teleported){ abilityText += `　${memberName('player1')}は【テレポート】で数字${p1Card._teleportSource.number}のカードの性質を反映中。`; }
-    if(p2Card._teleported){ abilityText += `　${memberName('player2')}は【テレポート】で数字${p2Card._teleportSource.number}のカードの性質を反映中。`; }
+    if(p1Card._teleported){ abilityText += `　${memberName('player1')}は「${escapeHtml(p1Card._teleportOrigin.name)||'無題'}」の【テレポート】で数字${p1Card.number}のカードを呼び出し中。`; }
+    if(p2Card._teleported){ abilityText += `　${memberName('player2')}は「${escapeHtml(p2Card._teleportOrigin.name)||'無題'}」の【テレポート】で数字${p2Card.number}のカードを呼び出し中。`; }
     document.getElementById('type-ability-note').textContent = abilityText;
 
     const adjP1El = document.getElementById('adj-p1');
@@ -1085,7 +1088,7 @@
       return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
-    const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】数字${card._teleportSource.number}のカード「${escapeHtml(card._teleportSource.name)||'無題'}」の性質を反映中</div>` : '';
+    const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】「${escapeHtml(card._teleportOrigin.name)||'無題'}」から呼び出された</div>` : '';
     return `
       <div class="reveal-card">
         <div class="rc-side">${escapeHtml(memberName(slot))}</div>
@@ -1126,16 +1129,18 @@
     if(p1Card._teleported){ eeBonus.player1 -= 1; }
     if(p2Card._teleported){ eeBonus.player2 -= 1; }
 
-    // テレポート使用時：出したカード自体は次に出す時1回テレポート不可にする。
-    // 逆に、ロックが掛かっているカードが今回出された場合は（テレポートを使ったかに関わらず）ロックを解除する。
+    // テレポート使用時：発動元のカード自体は次に出す時1回テレポート不可にする。
+    // ロックが掛かっているカードが今回（テレポートの有無に関わらず）改めて選ばれた場合は解除する。
+    const p1ResolvedIdx = p1Pick.teleportOriginIdx != null ? p1Pick.teleportOriginIdx : p1Pick.cardIndex;
+    const p2ResolvedIdx = p2Pick.teleportOriginIdx != null ? p2Pick.teleportOriginIdx : p2Pick.cardIndex;
     const newTeleportLock = {
       player1: { ...(latestBattle.teleportLock && latestBattle.teleportLock.player1) },
       player2: { ...(latestBattle.teleportLock && latestBattle.teleportLock.player2) }
     };
-    delete newTeleportLock.player1[p1Pick.cardIndex];
-    delete newTeleportLock.player2[p2Pick.cardIndex];
-    if(p1Card._teleported){ newTeleportLock.player1[p1Pick.cardIndex] = true; }
-    if(p2Card._teleported){ newTeleportLock.player2[p2Pick.cardIndex] = true; }
+    delete newTeleportLock.player1[p1ResolvedIdx];
+    delete newTeleportLock.player2[p2ResolvedIdx];
+    if(p1Card._teleported){ newTeleportLock.player1[p1ResolvedIdx] = true; }
+    if(p2Card._teleported){ newTeleportLock.player2[p2ResolvedIdx] = true; }
 
     const finished = newPoints.player1 >= 3 || newPoints.player2 >= 3;
 
