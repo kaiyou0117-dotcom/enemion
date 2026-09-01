@@ -166,6 +166,13 @@
                 <div class="hand-section" id="my-hand-section">
                   <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
                   <div class="hand-cards" id="my-hand"></div>
+                  <div id="teleport-panel" class="hidden" style="margin-top:10px; background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:12px;">
+                    <p class="ready-note" style="margin-bottom:8px;">このカードは【テレポート】を持っています。デッキの他のカードと入れ替えて出せます（数字とタイプは入れ替え先のものになります。使うと次のターンEE-1、このカードは次に出す時1回テレポートを使えなくなります）。</p>
+                    <select id="teleport-target-select" style="margin-bottom:8px;"></select>
+                    <div style="display:flex; gap:8px;">
+                      <button class="ghost-btn" id="btn-lock-teleport">テレポートで入れ替えて出す</button>
+                    </div>
+                  </div>
                   <div style="margin-top:10px;">
                     <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
                     <span class="ready-note" id="lock-status"></span>
@@ -631,6 +638,7 @@
       firstSlot: null,
       initiativePending: null,
       lockedCards: { player1: [false,false,false,false], player2: [false,false,false,false] },
+      teleportLock: { player1: {}, player2: {} },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -719,6 +727,20 @@
       document.getElementById('lock-status').textContent = (pick && pick.locked)
         ? `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`
         : (myEE < 1 ? 'EEが足りず、出せるカードがありません。' : '');
+
+      // --- テレポート効果の選択UI ---
+      const teleportPanel = document.getElementById('teleport-panel');
+      const myTeleportLock = (latestBattle.teleportLock && latestBattle.teleportLock[myRole]) || {};
+      const canOfferTeleport = !(pick && pick.locked) && myHandSelection !== null
+        && myDeck.cards[myHandSelection].number <= myEE && !myLocked[myHandSelection]
+        && (myDeck.cards[myHandSelection].effectNames||[]).includes('テレポート')
+        && !myTeleportLock[myHandSelection];
+      teleportPanel.classList.toggle('hidden', !canOfferTeleport);
+      if(canOfferTeleport){
+        const sel = document.getElementById('teleport-target-select');
+        sel.innerHTML = myDeck.cards.map((c, i) => i === myHandSelection ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      }
+
       oppHandSection.classList.add('hidden');
     } else {
       myHandSection.classList.add('hidden');
@@ -735,8 +757,8 @@
     const p1Reveal = isJudge ? p1Locked : bothLocked;
     const p2Reveal = isJudge ? p2Locked : bothLocked;
     document.getElementById('field-board').innerHTML =
-      (p1Reveal ? revealCardHtml('player1', latestDecks.player1.cards[latestBattle.picks.player1.cardIndex]) : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`) +
-      (p2Reveal ? revealCardHtml('player2', latestDecks.player2.cards[latestBattle.picks.player2.cardIndex]) : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`);
+      (p1Reveal ? revealCardHtml('player1', getBattleCard('player1')) : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`) +
+      (p2Reveal ? revealCardHtml('player2', getBattleCard('player2')) : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`);
 
     const face = document.getElementById('dice-face');
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
@@ -788,6 +810,17 @@
     renderJudgePanel();
   }
 
+  // テレポート効果で入れ替えている場合、数字・タイプは入れ替え先のカードのものを反映する
+  function getBattleCard(slot){
+    const pick = latestBattle.picks[slot];
+    const originalCard = latestDecks[slot].cards[pick.cardIndex];
+    if(pick.teleportFrom !== null && pick.teleportFrom !== undefined){
+      const sourceCard = latestDecks[slot].cards[pick.teleportFrom];
+      return { ...originalCard, number: sourceCard.number, type: sourceCard.type, _teleported: true, _teleportSource: sourceCard };
+    }
+    return originalCard;
+  }
+
   function resolveInitiativeIfNeeded(){
     if(myRole !== 'player1') return;
     if(latestBattle.firstSlot) return;
@@ -795,8 +828,8 @@
     if(initiativeResolvedForTurn === latestBattle.turn) return;
     initiativeResolvedForTurn = latestBattle.turn;
 
-    const p1Card = latestDecks.player1.cards[latestBattle.picks.player1.cardIndex];
-    const p2Card = latestDecks.player2.cards[latestBattle.picks.player2.cardIndex];
+    const p1Card = getBattleCard('player1');
+    const p2Card = getBattleCard('player2');
     const adv = typeAdvantage(p1Card.type, p2Card.type);
     const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
     const mimic = latestBattle.specialMimic || {};
@@ -899,7 +932,7 @@
     updates['decks/player1'] = decks.player2 || null;
     updates['decks/player2'] = decks.player1 || null;
 
-    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards'];
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock'];
     perSlotFields.forEach(key => {
       if(battle[key]){
         updates[`battle/${key}`] = {
@@ -943,9 +976,26 @@
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
     if(card.number > myEE || myLocked[myHandSelection]) return;
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, locked: true });
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportFrom: null, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
+    myHandSelection = null;
+  });
+
+  document.getElementById('btn-lock-teleport').addEventListener('click', async () => {
+    if(myHandSelection === null) return;
+    const myDeck = latestDecks[myRole];
+    const card = myDeck.cards[myHandSelection];
+    const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
+    const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
+    const myTeleportLock = (latestBattle.teleportLock && latestBattle.teleportLock[myRole]) || {};
+    if(card.number > myEE || myLocked[myHandSelection] || myTeleportLock[myHandSelection]) return;
+    const targetIdx = parseInt(document.getElementById('teleport-target-select').value, 10);
+    if(!Number.isInteger(targetIdx)) return;
+    const targetCard = myDeck.cards[targetIdx];
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportFrom: targetIdx, locked: true });
+    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】で「${card.name||'無題'}」と数字${targetCard.number}のカード「${targetCard.name||'無題'}」を入れ替えて出した。`, ts: Date.now() });
     myHandSelection = null;
   });
 
@@ -965,10 +1015,8 @@
   });
 
   function renderJudgePanel(){
-    const p1Idx = latestBattle.picks.player1.cardIndex;
-    const p2Idx = latestBattle.picks.player2.cardIndex;
-    const p1Card = latestDecks.player1.cards[p1Idx];
-    const p2Card = latestDecks.player2.cards[p2Idx];
+    const p1Card = getBattleCard('player1');
+    const p2Card = getBattleCard('player2');
 
     const adv = typeAdvantage(p1Card.type, p2Card.type);
     const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
@@ -990,6 +1038,8 @@
     } else if(advType === 'spd'){
       abilityText = `${memberName(advSlot)}の速度タイプにより、先後を選択しました。`;
     }
+    if(p1Card._teleported){ abilityText += `　${memberName('player1')}は【テレポート】で数字${p1Card._teleportSource.number}のカードの性質を反映中。`; }
+    if(p2Card._teleported){ abilityText += `　${memberName('player2')}は【テレポート】で数字${p2Card._teleportSource.number}のカードの性質を反映中。`; }
     document.getElementById('type-ability-note').textContent = abilityText;
 
     const adjP1El = document.getElementById('adj-p1');
@@ -1035,6 +1085,7 @@
       return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
+    const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】数字${card._teleportSource.number}のカード「${escapeHtml(card._teleportSource.name)||'無題'}」の性質を反映中</div>` : '';
     return `
       <div class="reveal-card">
         <div class="rc-side">${escapeHtml(memberName(slot))}</div>
@@ -1042,6 +1093,7 @@
         <div class="rc-name">${escapeHtml(card.name)}</div>
         <div class="rc-num">${card.number}</div>
         <div class="rc-meta">${escapeHtml(card.species)} ／ ${TYPE_LABEL[card.type]}</div>
+        ${teleportNote}
         ${effectsHtml ? `<div class="rc-effects">${effectsHtml}</div>` : ''}
         ${card.flavor ? `<div class="rc-effects" style="font-style:italic; color:var(--ink-dim);">${escapeHtml(card.flavor)}</div>` : ''}
       </div>
@@ -1054,10 +1106,10 @@
     const winner = winnerChoice.value;
     const award = parseInt(document.getElementById('award-points').value || '1', 10);
 
-    const p1Idx = latestBattle.picks.player1.cardIndex;
-    const p2Idx = latestBattle.picks.player2.cardIndex;
-    const p1Card = latestDecks.player1.cards[p1Idx];
-    const p2Card = latestDecks.player2.cards[p2Idx];
+    const p1Pick = latestBattle.picks.player1;
+    const p2Pick = latestBattle.picks.player2;
+    const p1Card = getBattleCard('player1');
+    const p2Card = getBattleCard('player2');
 
     const adv = typeAdvantage(p1Card.type, p2Card.type);
     const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
@@ -1071,6 +1123,19 @@
 
     let eeBonus = { player1: 0, player2: 0 };
     if(advType === 'def' && advSlot){ eeBonus[advSlot] = 1; }
+    if(p1Card._teleported){ eeBonus.player1 -= 1; }
+    if(p2Card._teleported){ eeBonus.player2 -= 1; }
+
+    // テレポート使用時：出したカード自体は次に出す時1回テレポート不可にする。
+    // 逆に、ロックが掛かっているカードが今回出された場合は（テレポートを使ったかに関わらず）ロックを解除する。
+    const newTeleportLock = {
+      player1: { ...(latestBattle.teleportLock && latestBattle.teleportLock.player1) },
+      player2: { ...(latestBattle.teleportLock && latestBattle.teleportLock.player2) }
+    };
+    delete newTeleportLock.player1[p1Pick.cardIndex];
+    delete newTeleportLock.player2[p2Pick.cardIndex];
+    if(p1Card._teleported){ newTeleportLock.player1[p1Pick.cardIndex] = true; }
+    if(p2Card._teleported){ newTeleportLock.player2[p2Pick.cardIndex] = true; }
 
     const finished = newPoints.player1 >= 3 || newPoints.player2 >= 3;
 
@@ -1083,10 +1148,11 @@
     updates['battle/initiativePending'] = null;
     updates['battle/turn'] = latestBattle.turn + 1;
     updates['battle/ee'] = {
-      player1: currentEe.player1 + 2 + eeBonus.player1,
-      player2: currentEe.player2 + 2 + eeBonus.player2
+      player1: Math.max(0, currentEe.player1 + 2 + eeBonus.player1),
+      player2: Math.max(0, currentEe.player2 + 2 + eeBonus.player2)
     };
     updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
+    updates['battle/teleportLock'] = newTeleportLock;
 
     if(finished){
       updates['battle/phase'] = 'result';
@@ -1127,6 +1193,7 @@
       picks:{player1:null, player2:null},
       firstSlot:null, initiativePending:null,
       lockedCards:{player1:[false,false,false,false], player2:[false,false,false,false]},
+      teleportLock:{player1:{}, player2:{}},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
