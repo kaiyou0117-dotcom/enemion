@@ -530,7 +530,7 @@
       document.getElementById('solo-judge-panel').classList.add('hidden');
       document.getElementById('solo-teleport-decide-panel').classList.remove('hidden');
       const originCard = myDeck[picks.me.cardIndex];
-      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。相手のカードを見た上で、デッキの別のカードを呼び出しますか？`;
+      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
       const sel = document.getElementById('solo-teleport-target-select');
       sel.innerHTML = myDeck.map((c,i) => i===picks.me.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
       return;
