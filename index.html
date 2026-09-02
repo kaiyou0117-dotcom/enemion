@@ -232,12 +232,13 @@
                     <label style="margin:0;">P2 次ターン獲得EE</label>
                     <input type="number" id="next-ee-p2" value="2" min="0">
                   </div>
-                  <p class="ready-note">通常は2です。ジャッジがいない場合は自分の分のみ調整してください（相手の分は相手側に任せる運用を想定しています）。</p>
+                  <p class="ready-note">通常は2です。ジャッジがいない場合、両プレイヤーがそれぞれ裁定案を提出し、内容が完全一致した時だけ確定します。</p>
                   <div class="judge-row">
                     <label style="margin:0;">獲得ポイント（win）</label>
                     <input type="number" id="award-points" value="1" min="0">
                   </div>
                   <div class="judge-row winner-radios" id="winner-radios"></div>
+                  <p class="ready-note" id="proposal-status-note"></p>
                   <button class="ghost-btn" id="btn-confirm-round">この番の結果を確定する（エンド）</button>
                   <span class="ready-note" id="confirm-note"></span>
                 </div>
@@ -259,6 +260,43 @@
         </div>
 
         <div class="table-side">
+          <div class="status-panel" id="status-panel">
+            <h3>状態異常・フィールド変化</h3>
+            <div class="status-list" id="status-list"></div>
+            <div class="status-add-row">
+              <input type="text" id="status-name" list="status-name-options" placeholder="名称（例：火傷状態）">
+              <input type="text" id="status-target" placeholder="対象（任意：例 P1の3番）">
+              <button class="ghost-btn" id="btn-status-add">追加</button>
+            </div>
+            <datalist id="status-name-options">
+              <option value="不安定な状態">
+              <option value="命中難">
+              <option value="不運">
+              <option value="火傷状態">
+              <option value="水浸し">
+              <option value="凍結状態">
+              <option value="麻痺状態">
+              <option value="大自然">
+              <option value="風">
+              <option value="音波">
+              <option value="飛行">
+              <option value="機械">
+              <option value="出血状態">
+              <option value="毒状態">
+              <option value="感染状態">
+              <option value="睡眠状態">
+              <option value="夜空">
+              <option value="重力">
+              <option value="霊魂">
+              <option value="ロスト">
+              <option value="戦場">
+              <option value="異界陣">
+              <option value="天空城">
+              <option value="歪曲">
+              <option value="反転">
+            </datalist>
+          </div>
+
           <div class="log-panel">
             <h3>卓上の記録</h3>
             <div class="log-list" id="log-list"></div>
@@ -418,6 +456,34 @@
       routeScreens();
       renderBattlePhase();
       renderResultPhase();
+    });
+
+    onValue(ref(db, `rooms/${roomId}/statusEffects`), (snap) => {
+      const data = snap.val() || {};
+      const items = Object.entries(data).sort((a,b) => (a[1].ts||0) - (b[1].ts||0));
+      const list = document.getElementById('status-list');
+      list.innerHTML = '';
+      if(items.length === 0){
+        list.innerHTML = '<div class="status-empty">現在、記録されている状態異常・フィールド変化はありません。</div>';
+      } else {
+        items.forEach(([id, item]) => {
+          const div = document.createElement('div');
+          div.className = 'status-chip';
+          div.innerHTML = `<span><span class="status-chip-name">${escapeHtml(item.name)}</span>${item.target ? `<span class="status-chip-target">（${escapeHtml(item.target)}）</span>` : ''}</span><button type="button" class="status-chip-remove" data-status-id="${id}">✕ 解除</button>`;
+          list.appendChild(div);
+        });
+        list.querySelectorAll('[data-status-id]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const r = ref(db, `rooms/${roomId}/statusEffects/${btn.dataset.statusId}`);
+            const s = await get(r);
+            const removed = s.val();
+            await remove(r);
+            if(removed){
+              await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`「${removed.name}${removed.target?'（'+removed.target+'）':''}」が解除された。`, ts: Date.now() });
+            }
+          });
+        });
+      }
     });
 
     onValue(ref(db, `rooms/${roomId}/log`), (snap) => {
@@ -667,6 +733,7 @@
       initiativePending: null,
       lockedCards: { player1: [false,false,false,false], player2: [false,false,false,false] },
       teleportLock: { player1: {}, player2: {} },
+      roundProposals: { player1: null, player2: null },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -850,6 +917,7 @@
     document.getElementById('initiative-panel').classList.add('hidden');
     document.getElementById('judge-panel-wrap').classList.remove('hidden');
     renderJudgePanel();
+    resolveRoundProposalsIfNeeded();
   }
 
   // テレポート発動時は、指定したデッキ内のカードが名前・数字・タイプ・効果すべてそのまま場に来る（一部の数値だけ借りるのではない）
@@ -1124,10 +1192,47 @@
     recalcSuggestion();
 
     const hasJudge = Object.values(latestMembers).some(m => m.slot === 'judge');
-    const canConfirm = hasJudge ? myRole === 'judge' : (myRole === 'player1' || myRole === 'player2');
-    document.getElementById('btn-confirm-round').disabled = !canConfirm;
+    const isPlayerRole = myRole === 'player1' || myRole === 'player2';
+    const canConfirm = hasJudge ? myRole === 'judge' : isPlayerRole;
     document.getElementById('confirm-note').textContent = canConfirm ? '' :
       (hasJudge ? 'ジャッジの確定操作を待っています。' : '');
+
+    const statusNote = document.getElementById('proposal-status-note');
+    const btn = document.getElementById('btn-confirm-round');
+    if(hasJudge){
+      statusNote.textContent = '';
+      btn.textContent = 'この番の結果を確定する（エンド）';
+      btn.disabled = !canConfirm;
+    } else {
+      const props = latestBattle.roundProposals || { player1:null, player2:null };
+      const myProposed = isPlayerRole ? !!props[myRole] : false;
+      const oppProposed = isPlayerRole ? !!props[oppSlot(myRole)] : false;
+      if(!isPlayerRole){
+        statusNote.textContent = `裁定案の提出状況　${memberName('player1')}: ${props.player1?'提出済み':'未提出'}／${memberName('player2')}: ${props.player2?'提出済み':'未提出'}`;
+        btn.disabled = true;
+      } else if(myProposed){
+        statusNote.textContent = `あなたの裁定案は提出済みです。${oppProposed ? '照合しています…' : `${memberName(oppSlot(myRole))}の提出を待っています。`}`;
+        btn.disabled = true;
+      } else {
+        statusNote.textContent = oppProposed ? `${memberName(oppSlot(myRole))}は既に裁定案を提出済みです。内容を確認して自分の裁定案を提出してください。` : '両者がそれぞれ裁定案を提出し、内容が一致すれば確定します。';
+        btn.textContent = '自分の裁定案を提出する';
+        btn.disabled = false;
+      }
+    }
+  }
+
+  function resolveRoundProposalsIfNeeded(){
+    if(myRole !== 'player1') return; // 競合を避けるため判定はplayer1側のみが行う
+    const props = latestBattle.roundProposals;
+    if(!props || !props.player1 || !props.player2) return;
+    const a = props.player1, b = props.player2;
+    const match = a.winner === b.winner && a.award === b.award && a.nextEeP1 === b.nextEeP1 && a.nextEeP2 === b.nextEeP2;
+    if(match){
+      applyConfirmedRound(a);
+    } else {
+      update(ref(db, `rooms/${roomId}/battle/roundProposals`), { player1: null, player2: null });
+      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の裁定案が食い違ったため確定されませんでした。もう一度確認して裁定案を出し直してください。', ts: Date.now() });
+    }
   }
 
   function revealCardHtml(slot, card){
@@ -1153,36 +1258,21 @@
     `;
   }
 
-  document.getElementById('btn-confirm-round').addEventListener('click', async () => {
-    const winnerChoice = document.querySelector('input[name="winner"]:checked');
-    if(!winnerChoice) return;
-    const winner = winnerChoice.value;
-    const award = parseInt(document.getElementById('award-points').value || '1', 10);
+  async function applyConfirmedRound(decision){
+    const { winner, award, nextEeP1, nextEeP2 } = decision;
 
     const p1Pick = latestBattle.picks.player1;
     const p2Pick = latestBattle.picks.player2;
     const p1Card = getBattleCard('player1');
     const p2Card = getBattleCard('player2');
 
-    const adv = typeAdvantage(p1Card.type, p2Card.type);
-    const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
-    const mimic = latestBattle.specialMimic || {};
-    const advType = advSlot ? effectiveType(advSlot==='player1'?p1Card:p2Card, mimic[advSlot]) : null;
-
     let newPoints = { ...latestBattle.points };
     if(winner === 'player1' || winner === 'player2'){
       newPoints[winner] = (newPoints[winner] || 0) + award;
     }
 
-    let eeBonus = { player1: 0, player2: 0 };
-    if(advType === 'def' && advSlot){ eeBonus[advSlot] = 1; }
-    if(p1Card._teleported){ eeBonus.player1 -= 1; }
-    if(p2Card._teleported){ eeBonus.player2 -= 1; }
-
-    const nextEeP1 = parseInt(document.getElementById('next-ee-p1').value, 10);
-    const nextEeP2 = parseInt(document.getElementById('next-ee-p2').value, 10);
-    const gainP1 = Number.isFinite(nextEeP1) ? nextEeP1 : (2 + eeBonus.player1);
-    const gainP2 = Number.isFinite(nextEeP2) ? nextEeP2 : (2 + eeBonus.player2);
+    const gainP1 = Number.isFinite(nextEeP1) ? nextEeP1 : 2;
+    const gainP2 = Number.isFinite(nextEeP2) ? nextEeP2 : 2;
 
     // テレポート使用時：発動元のカード自体は次に出す時1回テレポート不可にする。
     // ロックが掛かっているカードが今回（テレポートの有無に関わらず）改めて選ばれた場合は解除する。
@@ -1213,6 +1303,7 @@
     };
     updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
     updates['battle/teleportLock'] = newTeleportLock;
+    updates['battle/roundProposals'] = { player1: null, player2: null };
 
     if(finished){
       updates['battle/phase'] = 'result';
@@ -1228,6 +1319,27 @@
     if(finished){
       await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`勝負あり。${memberName(updates['battle/winner'])}の勝利。`, ts: Date.now() });
     }
+  }
+
+  document.getElementById('btn-confirm-round').addEventListener('click', async () => {
+    const winnerChoice = document.querySelector('input[name="winner"]:checked');
+    if(!winnerChoice) return;
+    const winner = winnerChoice.value;
+    const award = parseInt(document.getElementById('award-points').value || '1', 10);
+    const nextEeP1 = parseInt(document.getElementById('next-ee-p1').value, 10);
+    const nextEeP2 = parseInt(document.getElementById('next-ee-p2').value, 10);
+    const decision = { winner, award, nextEeP1, nextEeP2 };
+
+    const hasJudge = Object.values(latestMembers).some(m => m.slot === 'judge');
+    if(hasJudge){
+      if(myRole !== 'judge') return;
+      await applyConfirmedRound(decision);
+      return;
+    }
+
+    if(myRole !== 'player1' && myRole !== 'player2') return;
+    await update(ref(db, `rooms/${roomId}/battle/roundProposals/${myRole}`), decision);
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: '自分の裁定案を提出した。', ts: Date.now() });
   });
 
   // ============ 決着フェーズ ============
@@ -1253,9 +1365,11 @@
       firstSlot:null, initiativePending:null,
       lockedCards:{player1:[false,false,false,false], player2:[false,false,false,false]},
       teleportLock:{player1:{}, player2:{}},
+      roundProposals:{player1:null, player2:null},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
+    await remove(ref(db, `rooms/${roomId}/statusEffects`));
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'同じデッキで再戦を開始。', ts: Date.now() });
   });
 
@@ -1266,6 +1380,19 @@
     updates['battle/phase'] = 'build';
     await update(ref(db, `rooms/${roomId}`), updates);
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'編成からやり直します。', ts: Date.now() });
+  });
+
+  // ============ 状態異常・フィールド変化 ============
+  document.getElementById('btn-status-add').addEventListener('click', async () => {
+    const nameInput = document.getElementById('status-name');
+    const targetInput = document.getElementById('status-target');
+    const name = nameInput.value.trim();
+    const target = targetInput.value.trim();
+    if(!name) return;
+    await push(ref(db, `rooms/${roomId}/statusEffects`), { name, target: target || null, addedBy: myName, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${name}${target?'（'+target+'）':''}」を記録した。`, ts: Date.now() });
+    nameInput.value = '';
+    targetInput.value = '';
   });
 
   // ============ ログ送信 ============

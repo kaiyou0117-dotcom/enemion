@@ -589,6 +589,38 @@
   .winner-radios{ display:flex; gap: 14px; font-size: 13px; }
   .winner-radios label{ display:flex; align-items:center; gap:6px; color: var(--ink); font-size:13px; }
 
+  .status-panel{
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .status-panel h3{ font-family: var(--font-display); font-size: 15px; margin: 0 0 12px; color: #5a4a3a; }
+  .status-list{ display:flex; flex-direction:column; gap: 8px; margin-bottom: 14px; max-height: 220px; overflow-y: auto; }
+  .status-empty{ color: #8a7a68; font-size: 12px; }
+  .status-chip{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 8px;
+    background: #e3d6bd;
+    border: 1px solid #cbb99c;
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #2a211c;
+  }
+  .status-chip .status-chip-name{ font-weight: 600; }
+  .status-chip .status-chip-target{ color: #6b5c4f; margin-left: 6px; }
+  .status-chip .status-chip-remove{
+    background: none; border: none; color: #a5271e; cursor: pointer; font-size: 12px;
+  }
+  .status-add-row{ display:flex; flex-direction:column; gap: 6px; }
+  .status-add-row input[type="text"]{
+    background: #fff; color: #2a211c; border: 1px solid #cbb99c; margin-bottom: 0;
+  }
+
   .log-panel{
     background: var(--paper);
     border: 1px solid var(--edge);
