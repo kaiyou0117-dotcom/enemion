@@ -166,13 +166,6 @@
                 <div class="hand-section" id="my-hand-section">
                   <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
                   <div class="hand-cards" id="my-hand"></div>
-                  <div id="teleport-panel" class="hidden" style="margin-top:10px; background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:12px;">
-                    <p class="ready-note" style="margin-bottom:8px;">このカードは【テレポート】を持っています。デッキの他のカードと入れ替えて出せます（数字とタイプは入れ替え先のものになります。使うと次のターンEE-1、このカードは次に出す時1回テレポートを使えなくなります）。</p>
-                    <select id="teleport-target-select" style="margin-bottom:8px;"></select>
-                    <div style="display:flex; gap:8px;">
-                      <button class="ghost-btn" id="btn-lock-teleport">テレポートで入れ替えて出す</button>
-                    </div>
-                  </div>
                   <div style="margin-top:10px;">
                     <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
                     <span class="ready-note" id="lock-status"></span>
@@ -206,6 +199,18 @@
                   <h3>場（オープン）</h3>
                   <div class="reveal-board" id="field-board"></div>
                 </div>
+
+                <!-- テレポート発動判断（相手のカードを見た上で決める） -->
+                <div id="teleport-decide-panel" class="hidden" style="background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:14px; margin-bottom:20px;">
+                  <h3 style="font-family:var(--font-display); font-size:15px; color:var(--gold); margin:0 0 8px;">【テレポート】発動判断</h3>
+                  <p class="ready-note" id="teleport-decide-note" style="margin-bottom:8px;"></p>
+                  <select id="teleport-target-select" style="margin-bottom:8px;"></select>
+                  <div style="display:flex; gap:8px;">
+                    <button class="ghost-btn" id="btn-teleport-activate">発動する（選んだカードを呼び出す）</button>
+                    <button class="ghost-btn" id="btn-teleport-skip">発動しない</button>
+                  </div>
+                </div>
+                <p class="ready-note hidden" id="teleport-wait-note">相手が【テレポート】を発動するか検討しています…</p>
 
                 <!-- バトル：この番の裁定 -->
                 <div class="judge-panel hidden" id="judge-panel-wrap">
@@ -730,19 +735,6 @@
             : `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`)
         : (myEE < 1 ? 'EEが足りず、出せるカードがありません。' : '');
 
-      // --- テレポート効果の選択UI ---
-      const teleportPanel = document.getElementById('teleport-panel');
-      const myTeleportLock = (latestBattle.teleportLock && latestBattle.teleportLock[myRole]) || {};
-      const canOfferTeleport = !(pick && pick.locked) && myHandSelection !== null
-        && myDeck.cards[myHandSelection].number <= myEE && !myLocked[myHandSelection]
-        && (myDeck.cards[myHandSelection].effectNames||[]).includes('テレポート')
-        && !myTeleportLock[myHandSelection];
-      teleportPanel.classList.toggle('hidden', !canOfferTeleport);
-      if(canOfferTeleport){
-        const sel = document.getElementById('teleport-target-select');
-        sel.innerHTML = myDeck.cards.map((c, i) => i === myHandSelection ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
-      }
-
       oppHandSection.classList.add('hidden');
     } else {
       myHandSection.classList.add('hidden');
@@ -772,8 +764,33 @@
     if(!bothLocked){
       document.getElementById('initiative-panel').classList.add('hidden');
       document.getElementById('judge-panel-wrap').classList.add('hidden');
+      document.getElementById('teleport-decide-panel').classList.add('hidden');
+      document.getElementById('teleport-wait-note').classList.add('hidden');
       return;
     }
+
+    // --- テレポート発動判断（オープン後、相手のカードを見た上で決める） ---
+    const p1NeedsDecision = latestBattle.picks.player1.teleportDecided === false;
+    const p2NeedsDecision = latestBattle.picks.player2.teleportDecided === false;
+    const anyTeleportPending = p1NeedsDecision || p2NeedsDecision;
+    if(anyTeleportPending){
+      document.getElementById('initiative-panel').classList.add('hidden');
+      document.getElementById('judge-panel-wrap').classList.add('hidden');
+      const myNeedsDecision = (myRole === 'player1' && p1NeedsDecision) || (myRole === 'player2' && p2NeedsDecision);
+      document.getElementById('teleport-decide-panel').classList.toggle('hidden', !myNeedsDecision);
+      document.getElementById('teleport-wait-note').classList.toggle('hidden', myNeedsDecision);
+      if(myNeedsDecision){
+        const myDeck = latestDecks[myRole];
+        const pick = latestBattle.picks[myRole];
+        const originCard = myDeck.cards[pick.cardIndex];
+        document.getElementById('teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
+        const sel = document.getElementById('teleport-target-select');
+        sel.innerHTML = myDeck.cards.map((c,i) => i===pick.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      }
+      return;
+    }
+    document.getElementById('teleport-decide-panel').classList.add('hidden');
+    document.getElementById('teleport-wait-note').classList.add('hidden');
 
     // --- イニシアチブフェーズ：先後決定 ---
     resolveInitiativeIfNeeded();
@@ -978,28 +995,32 @@
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
     if(card.number > myEE || myLocked[myHandSelection]) return;
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportOriginIdx: null, locked: true });
+    const needsTeleportDecision = (card.effectNames||[]).includes('テレポート') && !((latestBattle.teleportLock && latestBattle.teleportLock[myRole] && latestBattle.teleportLock[myRole][myHandSelection]));
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsTeleportDecision, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
     myHandSelection = null;
   });
 
-  document.getElementById('btn-lock-teleport').addEventListener('click', async () => {
-    if(myHandSelection === null) return;
+  document.getElementById('btn-teleport-activate').addEventListener('click', async () => {
+    const pick = latestBattle.picks[myRole];
+    if(!pick || !pick.locked || pick.teleportDecided) return;
     const myDeck = latestDecks[myRole];
-    const originCard = myDeck.cards[myHandSelection];
-    const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
-    const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
-    const myTeleportLock = (latestBattle.teleportLock && latestBattle.teleportLock[myRole]) || {};
-    if(originCard.number > myEE || myLocked[myHandSelection] || myTeleportLock[myHandSelection]) return;
+    const originIdx = pick.cardIndex;
+    const originCard = myDeck.cards[originIdx];
     const targetIdx = parseInt(document.getElementById('teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
     const targetCard = myDeck.cards[targetIdx];
-    // 場に来るのは呼び出された側のカードそのもの（名前・数字・タイプ・効果すべて）。EEコストは元のカードの数字分を支払う。
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: myHandSelection, locked: true });
-    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - originCard.number });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
-    myHandSelection = null;
+    // 相手のカードを見た上で発動を判断する。場に来るのは呼び出された側のカードそのもの。
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: originIdx, teleportDecided: true, locked: true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `相手の場を見て「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
+  });
+
+  document.getElementById('btn-teleport-skip').addEventListener('click', async () => {
+    const pick = latestBattle.picks[myRole];
+    if(!pick || !pick.locked || pick.teleportDecided) return;
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { teleportDecided: true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】を発動せず、そのままバトルに進んだ。`, ts: Date.now() });
   });
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
