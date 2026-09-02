@@ -331,6 +331,7 @@
   let myHandSelection = null; // セレクト中に自分が選んでいるカードのindex（未確定）
   let judgePanelTurnMark = null; // バトル裁定欄の自動補正を、ターンごとに一度だけ入れるための目印
   let initiativeResolvedForTurn = null; // イニシアチブ抽選の重複実行防止
+  let eeDeductedForTurn = null; // オープン時のEE一括消費の重複実行防止
   const inputAvatar = document.getElementById('input-avatar');
   const avatarPreview = document.getElementById('avatar-preview');
   inputAvatar.addEventListener('change', async () => {
@@ -839,6 +840,8 @@
     const p2Locked = latestBattle.picks && latestBattle.picks.player2 && latestBattle.picks.player2.locked;
     const bothLocked = p1Locked && p2Locked;
 
+    if(bothLocked){ deductEeOnOpenIfNeeded(); }
+
     // --- オープンフェーズ：場に公開 ---
     // ジャッジは各プレイヤーが選んだ時点で即座にカードが分かる。それ以外（プレイヤー・観戦・閲覧のみ）は両者が選び終えるまで伏せられたまま。
     const isJudge = myRole === 'judge';
@@ -933,6 +936,26 @@
       return { ...card, _teleported: true, _teleportOrigin: originCard };
     }
     return card;
+  }
+
+  // 両者ロック（オープン）の瞬間にEEをまとめて消費する。
+  // セレクト段階でEEが減ると、公開前にどのカードを選んだか分かってしまうため、必ずここで消費する。
+  function deductEeOnOpenIfNeeded(){
+    if(myRole !== 'player1') return; // 競合を避けるため実行はplayer1側のみ
+    if(!latestBattle || !latestBattle.picks) return;
+    const p1Pick = latestBattle.picks.player1;
+    const p2Pick = latestBattle.picks.player2;
+    if(!(p1Pick && p1Pick.locked && p2Pick && p2Pick.locked)) return;
+    if(eeDeductedForTurn === latestBattle.turn) return;
+    eeDeductedForTurn = latestBattle.turn;
+
+    const p1Cost = latestDecks.player1.cards[p1Pick.cardIndex].number;
+    const p2Cost = latestDecks.player2.cards[p2Pick.cardIndex].number;
+    const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
+    update(ref(db, `rooms/${roomId}/battle/ee`), {
+      player1: currentEe.player1 - p1Cost,
+      player2: currentEe.player2 - p2Cost
+    });
   }
 
   function resolveInitiativeIfNeeded(){
@@ -1092,8 +1115,8 @@
     if(card.number > myEE || myLocked[myHandSelection]) return;
     const needsTeleportDecision = (card.effectNames||[]).includes('テレポート') && !((latestBattle.teleportLock && latestBattle.teleportLock[myRole] && latestBattle.teleportLock[myRole][myHandSelection]));
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsTeleportDecision, locked: true });
-    await update(ref(db, `rooms/${roomId}/battle/ee`), { [myRole]: myEE - card.number });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト、EE ${card.number}消費）。`, ts: Date.now() });
+    // EEはここでは消費しない（オープンの瞬間に消費する。セレクト段階でEEの増減が見えると、公開前にカードが推測できてしまうため）
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
     myHandSelection = null;
   });
 
