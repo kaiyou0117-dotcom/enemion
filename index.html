@@ -477,6 +477,7 @@
   // ============ 編成フェーズ（共通ロジック） ============
   // ---- 部屋内の編成フェーズ ----
   let pendingEffects = null; // [[名前,...], ...] 4枚分。ローカル編集用の作業コピー
+  let deckUnsaved = true; // 「デッキを保存」を押すまでは準備完了にできない
 
   function renderBuildPhase(){
     if(myRole !== 'player1' && myRole !== 'player2') return; // 編成できるのはプレイヤーのみ
@@ -486,6 +487,7 @@
 
     if(!pendingEffects){
       pendingEffects = myDeck.cards.map(c => (c.effectNames || []).slice());
+      deckUnsaved = false; // サーバーから読み込んだ直後は「保存済み」と同じ状態
     }
 
     syncCardFieldsFromDom(grid, myDeck.cards);
@@ -494,25 +496,32 @@
       onAddEffect: (idx, name) => addEffectToCard(idx, name),
       onRemoveEffect: (idx, name) => {
         pendingEffects[idx] = pendingEffects[idx].filter(n => n !== name);
+        deckUnsaved = true;
         renderBuildPhase();
       },
       onImageChange: (idx, dataUrl) => {
         latestDecks[myRole].cards[idx].image = dataUrl;
+        deckUnsaved = true;
         renderBuildPhase();
       }
     });
 
     document.getElementById('btn-deck-save').disabled = isReady;
     document.getElementById('btn-deck-ready').textContent = isReady ? '編成をやり直す' : '準備完了にする';
+    document.getElementById('btn-deck-ready').disabled = !isReady && deckUnsaved;
   }
 
   function addEffectToCard(idx, name){
     const deckErr = document.getElementById('deck-error');
     const cardNumber = idx + 1; // 数字はカード枠に固定
     if(addEffectGeneric(pendingEffects, idx, name, cardNumber, deckErr)){
+      deckUnsaved = true;
       renderBuildPhase();
     }
   }
+
+  document.getElementById('deck-grid').addEventListener('input', () => { deckUnsaved = true; });
+  document.getElementById('deck-grid').addEventListener('change', () => { deckUnsaved = true; });
 
   document.getElementById('btn-load-from-deckset').addEventListener('click', () => {
     const panel = document.getElementById('load-deckset-panel');
@@ -564,6 +573,7 @@
     latestDecks[myRole] = latestDecks[myRole] || emptyDeck();
     latestDecks[myRole].cards = JSON.parse(JSON.stringify(deck.cards));
     pendingEffects = deck.cards.map(c => (c.effectNames||[]).slice());
+    deckUnsaved = true;
     document.getElementById('load-deckset-panel').classList.add('hidden');
     document.getElementById('deck-error').textContent = 'デッキセットから読み込みました。内容を確認して「デッキを保存」を押してください。';
     // 画面に残っている古い入力内容で上書きされないよう、先にグリッドを空にしてから再描画する
@@ -596,11 +606,17 @@
 
     await set(ref(db, `rooms/${roomId}/decks/${myRole}`), { ready:false, cards });
     deckErr.textContent = 'デッキを保存しました。';
+    deckUnsaved = false;
+    renderBuildPhase();
   });
 
   document.getElementById('btn-deck-ready').addEventListener('click', async () => {
     const myDeck = latestDecks[myRole] || emptyDeck();
     const newReady = !myDeck.ready;
+    if(newReady && deckUnsaved){
+      document.getElementById('deck-error').textContent = '先にデッキを保存してください。';
+      return;
+    }
     if(newReady && (!myDeck.cards || myDeck.cards.some(c => !c.name))){
       document.getElementById('deck-error').textContent = '先にデッキを保存してください（全カード入力必須）。';
       return;
