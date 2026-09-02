@@ -529,9 +529,31 @@
   let deckUnsaved = true; // 「デッキを保存」を押すまでは準備完了にできない
 
   const STATUS_NAME_PRESETS = [
-    '不安定な状態','命中難','不運','火傷状態','水浸し','凍結状態','麻痺状態',
-    '大自然','風','音波','飛行','機械','出血状態','毒状態','感染状態',
-    '睡眠状態','夜空','重力','霊魂','ロスト','戦場','異界陣','天空城','歪曲','滅亡'
+    { name: '不安定な状態', text: '1d3を振り、1が出たら数字を-1する（重複可）。' },
+    { name: '命中難', text: '1d8を振り、1が出たらメリット効果を使えない。' },
+    { name: '不運', text: '1d4を振り、1が出たらメリット効果を使えない。' },
+    { name: '火傷状態', text: '数字を-1する（重複可）。4つ重なるごとにメリット効果を1つ使えなくする。' },
+    { name: '水浸し', text: '火傷状態にならなくなる。数字が1未満に下がらなくなる。' },
+    { name: '凍結状態', text: '数字が1以下のカードは出せなくなる。重複すると必要な数字が上がる。火傷状態になると解除される。' },
+    { name: '麻痺状態', text: '相性が常に不利扱いになる。次に出した時、メリット効果を1つ使えなくする（重複可）。' },
+    { name: '大自然', text: 'カードの状態異常を解除し、以後は毒状態以外の状態異常を受けなくなる。' },
+    { name: '風', text: '【風】が使われるたび、【風】を持つカードの数字が+1される（最大+4）。' },
+    { name: '音波', text: '相手の数字を4にし、相手が持つ【音波】の数だけそこから引く。' },
+    { name: '飛行', text: '【飛行】を持たない相手の効果を1つ避ける。' },
+    { name: '機械', text: '【機械】以外の相手からの攻撃・状態異常による数字低下を受けない。' },
+    { name: '出血状態', text: '数字を-1し、攻撃効果を1つ使えなくする（重複可）。' },
+    { name: '毒状態', text: '経過ターンごとに数字が-1される（重複可）。毒の累計経過ターンが4以上になると敗北する。' },
+    { name: '感染状態', text: 'デッキ内の感染状態1つにつき数字-1。次に出すカードにも感染する（重複可）。' },
+    { name: '睡眠状態', text: '数字が0になり、+効果を受けなくなる。次に出した時メリット効果を1つ使えなくする。ターン終了時に解除される。' },
+    { name: '夜空', text: '場を夜空にし、カードを睡眠状態にする。' },
+    { name: '重力', text: '効果テキスト中の数字を1減らして扱う（重複可）。' },
+    { name: '霊魂', text: 'ロストしたカードを一時的に復活させる。基本的に効果のみ発動し、バトル後デッキへ戻る。' },
+    { name: 'ロスト', text: '対象カードをその試合中使えなくする。基本的にデッキから除外される。' },
+    { name: '戦場', text: '以後お互いは数字が+値されず、効果では勝てなくなる。' },
+    { name: '異界陣', text: '相手が先手ならその数字-1、自分が先手ならその数字+1する。' },
+    { name: '天空城', text: '以後、飛行を持たないカードは数字-1される。' },
+    { name: '歪曲', text: '以後お互いの+効果は-に、-効果は+に入れ替わる。' },
+    { name: '滅亡', text: '4ターン後、試合に勝利する。' }
   ];
 
   function renderBuildPhase(){
@@ -1395,43 +1417,62 @@
         </div>
         <div class="status-picker-free-row">
           <input type="text" class="picker-search" id="status-picker-free-input" placeholder="任意の文字で直接書き込む…">
-          <button type="button" class="ghost-btn" id="status-picker-free-use">この内容で使う</button>
         </div>
         <div class="picker-grid" id="status-picker-grid"></div>
+        <div class="status-picker-desc" id="status-picker-desc"></div>
+        <div class="status-picker-footer">
+          <button type="button" class="seal-btn" id="status-picker-confirm" style="width:auto; padding:10px 24px;" disabled>決定する</button>
+        </div>
       </div>
     `;
     document.body.appendChild(overlay);
 
     const grid = overlay.querySelector('#status-picker-grid');
-    grid.innerHTML = STATUS_NAME_PRESETS.map(n => `<button type="button" class="picker-card" data-name="${escapeHtml(n)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(n)}</span></div></button>`).join('');
+    grid.innerHTML = STATUS_NAME_PRESETS.map(p => `<button type="button" class="picker-card" data-name="${escapeHtml(p.name)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(p.name)}</span></div></button>`).join('');
+
+    const descEl = overlay.querySelector('#status-picker-desc');
+    const confirmBtn = overlay.querySelector('#status-picker-confirm');
+    const freeInput = overlay.querySelector('#status-picker-free-input');
+    let pendingName = '';
 
     function close(){
       overlay.remove();
       document.removeEventListener('keydown', onKeydown);
     }
     function onKeydown(e){ if(e.key === 'Escape') close(); }
-    function choose(name){
-      selectedStatusName = name;
-      document.getElementById('status-name-display').textContent = name;
+    function commit(){
+      if(!pendingName.trim()) return;
+      selectedStatusName = pendingName.trim();
+      document.getElementById('status-name-display').textContent = selectedStatusName;
       close();
     }
 
+    function stagePreset(name, text){
+      pendingName = name;
+      freeInput.value = '';
+      descEl.textContent = text;
+      confirmBtn.disabled = false;
+      grid.querySelectorAll('.picker-card').forEach(c => c.classList.toggle('selected', c.dataset.name === name));
+    }
+
     grid.querySelectorAll('[data-name]').forEach(btn => {
-      btn.addEventListener('click', () => choose(btn.dataset.name));
+      const preset = STATUS_NAME_PRESETS.find(p => p.name === btn.dataset.name);
+      btn.addEventListener('click', () => stagePreset(preset.name, preset.text));
     });
     overlay.querySelector('.picker-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
     document.addEventListener('keydown', onKeydown);
 
-    const freeInput = overlay.querySelector('#status-picker-free-input');
-    overlay.querySelector('#status-picker-free-use').addEventListener('click', () => {
-      const v = freeInput.value.trim();
-      if(!v) return;
-      choose(v);
+    freeInput.addEventListener('input', () => {
+      pendingName = freeInput.value;
+      descEl.textContent = '';
+      confirmBtn.disabled = !freeInput.value.trim();
+      grid.querySelectorAll('.picker-card').forEach(c => c.classList.remove('selected'));
     });
     freeInput.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter'){ const v = freeInput.value.trim(); if(v) choose(v); }
+      if(e.key === 'Enter' && freeInput.value.trim()) commit();
     });
+    confirmBtn.addEventListener('click', commit);
     freeInput.focus();
   }
 
