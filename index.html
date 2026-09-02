@@ -136,6 +136,10 @@
                 <button type="button" class="ghost-btn" id="btn-admin-swap-players">P1とP2の状態を入れ替える</button>
                 <span class="ready-note">途中退出→再入室で枠がずれてしまった時に使います（デッキ・EE・win・場の進行を丸ごと入れ替えます）。</span>
               </div>
+              <div class="judge-admin-row">
+                <button type="button" class="ghost-btn" id="btn-admin-undo">場の状態を一つ前に戻す</button>
+                <span class="ready-note" id="admin-undo-note">直前に確定した番の裁定を取り消し、確定前の状態に戻します（1回分のみ）。</span>
+              </div>
               <div class="judge-admin-lock-wrap">
                 <div>
                   <div class="judge-admin-lock-label" id="admin-lock-label-p1">プレイヤー1のカード</div>
@@ -1129,6 +1133,20 @@
     await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:'プレイヤー1とプレイヤー2の状態（デッキ・EE・win・場の進行）を入れ替えた。', ts: Date.now() });
   });
 
+  document.getElementById('btn-admin-undo').addEventListener('click', async () => {
+    const snap = await get(ref(db, `rooms/${roomId}/battle/undoSnapshot`));
+    const snapshot = snap.val();
+    if(!snapshot){
+      document.getElementById('admin-undo-note').textContent = '戻せる状態がありません（まだ番が確定されていないか、既に一度戻しています）。';
+      return;
+    }
+    if(!confirm('直前に確定した番の結果を取り消し、確定前の状態に戻します。よろしいですか？')) return;
+
+    delete snapshot.undoSnapshot; // 二重に戻せないよう、戻した後の状態からは消しておく
+    await set(ref(db, `rooms/${roomId}/battle`), snapshot);
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:'場の状態を一つ前（直前に確定した番の前）に戻した。', ts: Date.now() });
+  });
+
   function renderPips(id, points){
     const el = document.getElementById(id);
     el.innerHTML = '';
@@ -1328,6 +1346,10 @@
   }
 
   async function applyConfirmedRound(decision){
+    // ジャッジの「一つ前の状態に戻す」用に、確定直前の状態を保存しておく
+    const snapshotBeforeThisRound = JSON.parse(JSON.stringify(latestBattle));
+    delete snapshotBeforeThisRound.undoSnapshot; // 多重ネストを防ぐ
+
     const { winner, award, nextEeP1, nextEeP2 } = decision;
 
     const p1Pick = latestBattle.picks.player1;
@@ -1373,6 +1395,7 @@
     updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
     updates['battle/teleportLock'] = newTeleportLock;
     updates['battle/roundProposals'] = { player1: null, player2: null };
+    updates['battle/undoSnapshot'] = snapshotBeforeThisRound;
 
     if(finished){
       updates['battle/phase'] = 'result';
