@@ -264,38 +264,11 @@
             <h3>状態異常・フィールド変化</h3>
             <div class="status-list" id="status-list"></div>
             <div class="status-add-row">
-              <input type="text" id="status-name" list="status-name-options" placeholder="名称（例：火傷状態）">
+              <button type="button" class="ghost-btn" id="btn-open-status-picker">名称を選ぶ：<span id="status-name-display">未選択</span></button>
               <input type="text" id="status-target" placeholder="対象（例：P1の3番・フィールド）">
               <input type="text" id="status-duration" placeholder="継続ターン数（空欄=永続、数字を入力）">
               <button class="ghost-btn" id="btn-status-add">追加</button>
             </div>
-            <datalist id="status-name-options">
-              <option value="不安定な状態">
-              <option value="命中難">
-              <option value="不運">
-              <option value="火傷状態">
-              <option value="水浸し">
-              <option value="凍結状態">
-              <option value="麻痺状態">
-              <option value="大自然">
-              <option value="風">
-              <option value="音波">
-              <option value="飛行">
-              <option value="機械">
-              <option value="出血状態">
-              <option value="毒状態">
-              <option value="感染状態">
-              <option value="睡眠状態">
-              <option value="夜空">
-              <option value="重力">
-              <option value="霊魂">
-              <option value="ロスト">
-              <option value="戦場">
-              <option value="異界陣">
-              <option value="天空城">
-              <option value="歪曲">
-              <option value="滅亡">
-            </datalist>
           </div>
 
           <div class="log-panel">
@@ -554,6 +527,12 @@
   // ---- 部屋内の編成フェーズ ----
   let pendingEffects = null; // [[名前,...], ...] 4枚分。ローカル編集用の作業コピー
   let deckUnsaved = true; // 「デッキを保存」を押すまでは準備完了にできない
+
+  const STATUS_NAME_PRESETS = [
+    '不安定な状態','命中難','不運','火傷状態','水浸し','凍結状態','麻痺状態',
+    '大自然','風','音波','飛行','機械','出血状態','毒状態','感染状態',
+    '睡眠状態','夜空','重力','霊魂','ロスト','戦場','異界陣','天空城','歪曲','滅亡'
+  ];
 
   function renderBuildPhase(){
     if(myRole !== 'player1' && myRole !== 'player2') return; // 編成できるのはプレイヤーのみ
@@ -1403,11 +1382,65 @@
   });
 
   // ============ 状態異常・フィールド変化 ============
+  let selectedStatusName = '';
+
+  function openStatusPickerModal(){
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal">
+        <div class="picker-header">
+          <span>状態異常・フィールド名を選ぶ</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div class="status-picker-free-row">
+          <input type="text" class="picker-search" id="status-picker-free-input" placeholder="任意の文字で直接書き込む…">
+          <button type="button" class="ghost-btn" id="status-picker-free-use">この内容で使う</button>
+        </div>
+        <div class="picker-grid" id="status-picker-grid"></div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const grid = overlay.querySelector('#status-picker-grid');
+    grid.innerHTML = STATUS_NAME_PRESETS.map(n => `<button type="button" class="picker-card" data-name="${escapeHtml(n)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(n)}</span></div></button>`).join('');
+
+    function close(){
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+    function choose(name){
+      selectedStatusName = name;
+      document.getElementById('status-name-display').textContent = name;
+      close();
+    }
+
+    grid.querySelectorAll('[data-name]').forEach(btn => {
+      btn.addEventListener('click', () => choose(btn.dataset.name));
+    });
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+
+    const freeInput = overlay.querySelector('#status-picker-free-input');
+    overlay.querySelector('#status-picker-free-use').addEventListener('click', () => {
+      const v = freeInput.value.trim();
+      if(!v) return;
+      choose(v);
+    });
+    freeInput.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){ const v = freeInput.value.trim(); if(v) choose(v); }
+    });
+    freeInput.focus();
+  }
+
+  document.getElementById('btn-open-status-picker').addEventListener('click', openStatusPickerModal);
+
   document.getElementById('btn-status-add').addEventListener('click', async () => {
-    const nameInput = document.getElementById('status-name');
     const targetInput = document.getElementById('status-target');
     const durationInput = document.getElementById('status-duration');
-    const name = nameInput.value.trim();
+    const name = selectedStatusName.trim();
     const target = targetInput.value.trim();
     const durationRaw = durationInput.value.trim();
     if(!name) return;
@@ -1419,7 +1452,8 @@
     await push(ref(db, `rooms/${roomId}/statusEffects`), { name, target: target || null, addedBy: myName, remainingTurns, ts: Date.now() });
     const durationNote = remainingTurns == null ? '永続' : `あと${remainingTurns}ターンで消滅`;
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${name}${target?'（'+target+'）':''}」を記録した（${durationNote}）。`, ts: Date.now() });
-    nameInput.value = '';
+    selectedStatusName = '';
+    document.getElementById('status-name-display').textContent = '未選択';
     targetInput.value = '';
     durationInput.value = '';
   });

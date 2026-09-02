@@ -331,6 +331,14 @@
     width: calc(100% - 36px);
     margin: 14px 18px 0;
   }
+  .status-picker-free-row{
+    display:flex;
+    gap: 8px;
+    margin: 14px 18px 0;
+    align-items:center;
+  }
+  .status-picker-free-row .picker-search{ margin: 0 !important; width: 100% !important; flex:1; }
+  .status-picker-free-row .ghost-btn{ white-space:nowrap; }
   .picker-filters{
     display:flex;
     gap: 8px;
