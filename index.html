@@ -265,7 +265,8 @@
             <div class="status-list" id="status-list"></div>
             <div class="status-add-row">
               <input type="text" id="status-name" list="status-name-options" placeholder="名称（例：火傷状態）">
-              <input type="text" id="status-target" placeholder="対象（任意：例 P1の3番）">
+              <input type="text" id="status-target" placeholder="対象（例：P1の3番・フィールド）">
+              <input type="text" id="status-duration" placeholder="継続ターン数（空欄=永続、数字を入力）">
               <button class="ghost-btn" id="btn-status-add">追加</button>
             </div>
             <datalist id="status-name-options">
@@ -293,7 +294,7 @@
               <option value="異界陣">
               <option value="天空城">
               <option value="歪曲">
-              <option value="反転">
+              <option value="滅亡">
             </datalist>
           </div>
 
@@ -469,7 +470,8 @@
         items.forEach(([id, item]) => {
           const div = document.createElement('div');
           div.className = 'status-chip';
-          div.innerHTML = `<span><span class="status-chip-name">${escapeHtml(item.name)}</span>${item.target ? `<span class="status-chip-target">（${escapeHtml(item.target)}）</span>` : ''}</span><button type="button" class="status-chip-remove" data-status-id="${id}">✕ 解除</button>`;
+          const durationNote = item.remainingTurns == null ? '永続' : `あと${item.remainingTurns}ターン`;
+          div.innerHTML = `<span><span class="status-chip-name">${escapeHtml(item.name)}</span>${item.target ? `<span class="status-chip-target">（${escapeHtml(item.target)}）</span>` : ''}<span class="status-chip-target">［${durationNote}］</span></span><button type="button" class="status-chip-remove" data-status-id="${id}">✕ 解除</button>`;
           list.appendChild(div);
         });
         list.querySelectorAll('[data-status-id]').forEach(btn => {
@@ -479,7 +481,8 @@
             const removed = s.val();
             await remove(r);
             if(removed){
-              await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`「${removed.name}${removed.target?'（'+removed.target+'）':''}」が解除された。`, ts: Date.now() });
+              const durationNote = removed.remainingTurns == null ? '' : `（残り${removed.remainingTurns}ターンの時点で）`;
+              await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`「${removed.name}${removed.target?'（'+removed.target+'）':''}」が解除された${durationNote}。`, ts: Date.now() });
             }
           });
         });
@@ -1319,6 +1322,23 @@
     if(finished){
       await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`勝負あり。${memberName(updates['battle/winner'])}の勝利。`, ts: Date.now() });
     }
+
+    await tickStatusEffects();
+  }
+
+  async function tickStatusEffects(){
+    const snap = await get(ref(db, `rooms/${roomId}/statusEffects`));
+    const data = snap.val() || {};
+    for(const [id, item] of Object.entries(data)){
+      if(item.remainingTurns == null) continue; // 永続は減少しない
+      const nextRemaining = item.remainingTurns - 1;
+      if(nextRemaining <= 0){
+        await remove(ref(db, `rooms/${roomId}/statusEffects/${id}`));
+        await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`「${item.name}${item.target?'（'+item.target+'）':''}」が0ターンになり消滅した。`, ts: Date.now() });
+      } else {
+        await update(ref(db, `rooms/${roomId}/statusEffects/${id}`), { remainingTurns: nextRemaining });
+      }
+    }
   }
 
   document.getElementById('btn-confirm-round').addEventListener('click', async () => {
@@ -1386,13 +1406,22 @@
   document.getElementById('btn-status-add').addEventListener('click', async () => {
     const nameInput = document.getElementById('status-name');
     const targetInput = document.getElementById('status-target');
+    const durationInput = document.getElementById('status-duration');
     const name = nameInput.value.trim();
     const target = targetInput.value.trim();
+    const durationRaw = durationInput.value.trim();
     if(!name) return;
-    await push(ref(db, `rooms/${roomId}/statusEffects`), { name, target: target || null, addedBy: myName, ts: Date.now() });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${name}${target?'（'+target+'）':''}」を記録した。`, ts: Date.now() });
+    let remainingTurns = null;
+    if(durationRaw !== '' && durationRaw !== '永続'){
+      const n = parseInt(durationRaw, 10);
+      if(Number.isFinite(n) && n > 0){ remainingTurns = n; }
+    }
+    await push(ref(db, `rooms/${roomId}/statusEffects`), { name, target: target || null, addedBy: myName, remainingTurns, ts: Date.now() });
+    const durationNote = remainingTurns == null ? '永続' : `あと${remainingTurns}ターンで消滅`;
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${name}${target?'（'+target+'）':''}」を記録した（${durationNote}）。`, ts: Date.now() });
     nameInput.value = '';
     targetInput.value = '';
+    durationInput.value = '';
   });
 
   // ============ ログ送信 ============
