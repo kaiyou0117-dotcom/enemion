@@ -397,6 +397,7 @@
       const myMemberRef = ref(db, `rooms/${roomId}/members/${memberId}`);
       await set(myMemberRef, { name: myName, slot: myRole, avatar: myAvatarDataUrl || null, joinedAt: serverTimestamp() });
       onDisconnect(myMemberRef).remove();
+      saveSession();
 
       document.getElementById('match-room-code').textContent = roomRaw;
       document.getElementById('play-room-code').textContent = `合言葉: ${roomRaw}`;
@@ -521,8 +522,49 @@
   document.getElementById('btn-leave-play').addEventListener('click', leaveRoom);
   async function leaveRoom(){
     if(roomId && memberId){ await remove(ref(db, `rooms/${roomId}/members/${memberId}`)); }
+    clearSession();
     location.reload();
   }
+
+  // ============ リロード対策：セッションの保存・復元 ============
+  function saveSession(){
+    try{
+      localStorage.setItem('enemion_session', JSON.stringify({
+        roomId, memberId, myRole, myName, avatar: myAvatarDataUrl || null
+      }));
+    } catch(e){ /* 保存に失敗しても致命的ではないので無視 */ }
+  }
+  function clearSession(){
+    try{ localStorage.removeItem('enemion_session'); } catch(e){}
+  }
+  async function tryRestoreSession(){
+    let saved;
+    try{ saved = JSON.parse(localStorage.getItem('enemion_session')); } catch(e){ saved = null; }
+    if(!saved || !saved.roomId || !saved.memberId || !saved.myRole || !saved.myName) return;
+
+    roomId = saved.roomId;
+    memberId = saved.memberId;
+    myRole = saved.myRole;
+    myName = saved.myName;
+    myAvatarDataUrl = saved.avatar || null;
+
+    try{
+      const myMemberRef = ref(db, `rooms/${roomId}/members/${memberId}`);
+      await set(myMemberRef, { name: myName, slot: myRole, avatar: myAvatarDataUrl || null, joinedAt: serverTimestamp() });
+      onDisconnect(myMemberRef).remove();
+
+      document.getElementById('match-room-code').textContent = roomId;
+      document.getElementById('play-room-code').textContent = `合言葉: ${roomId}`;
+
+      initRoomListeners();
+    } catch(err){
+      // 復元に失敗した場合は、通常の入室画面に留まる
+      clearSession();
+      roomId = null; memberId = null; myRole = null; myName = null;
+      showFatalError('セッション復元', err);
+    }
+  }
+  tryRestoreSession();
 
   // ============ 編成フェーズ（共通ロジック） ============
   // ---- 部屋内の編成フェーズ ----
