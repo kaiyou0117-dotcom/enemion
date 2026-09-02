@@ -118,13 +118,6 @@
             <div class="hand-section" id="solo-hand-section">
               <h3>あなたの手札（セレクト）</h3>
               <div class="hand-cards" id="solo-my-hand"></div>
-              <div id="solo-teleport-panel" class="hidden" style="margin-top:10px; background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:12px;">
-                <p class="ready-note" style="margin-bottom:8px;">このカードは【テレポート】を持っています。デッキの他のカードと入れ替えて出せます（数字とタイプは入れ替え先のものになります。使うと次のターンEE-1、このカードは次に出す時1回テレポートを使えなくなります）。</p>
-                <select id="solo-teleport-target-select" style="margin-bottom:8px;"></select>
-                <div style="display:flex; gap:8px;">
-                  <button class="ghost-btn" id="btn-solo-lock-teleport">テレポートで入れ替えて出す</button>
-                </div>
-              </div>
               <div style="margin-top:10px;">
                 <button class="ghost-btn" id="btn-solo-lock" disabled>このカードを伏せて選ぶ</button>
                 <span class="ready-note" id="solo-lock-status"></span>
@@ -153,6 +146,17 @@
             <div class="hand-section">
               <h3>場（オープン）</h3>
               <div class="reveal-board" id="solo-field-board"></div>
+            </div>
+
+            <!-- テレポート発動判断（相手のカードを見た上で決める） -->
+            <div id="solo-teleport-decide-panel" class="hidden" style="background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:14px; margin-bottom:20px;">
+              <h3 style="font-family:var(--font-display); font-size:15px; color:var(--gold); margin:0 0 8px;">【テレポート】発動判断</h3>
+              <p class="ready-note" id="solo-teleport-decide-note" style="margin-bottom:8px;"></p>
+              <select id="solo-teleport-target-select" style="margin-bottom:8px;"></select>
+              <div style="display:flex; gap:8px;">
+                <button class="ghost-btn" id="btn-solo-teleport-activate">発動する（選んだカードを呼び出す）</button>
+                <button class="ghost-btn" id="btn-solo-teleport-skip">発動しない</button>
+              </div>
             </div>
 
             <!-- バトル：この番の裁定 -->
@@ -502,24 +506,13 @@
     document.getElementById('btn-solo-lock').disabled = !canLock;
     document.getElementById('solo-lock-status').textContent = ee.me < 1 ? 'EEが足りず、出せるカードがありません。' : '';
 
-    // --- テレポート効果の選択UI ---
-    const teleportPanel = document.getElementById('solo-teleport-panel');
-    const canOfferTeleport = !picks.me && myHandSelection !== null
-      && myDeck[myHandSelection].number <= ee.me
-      && (myDeck[myHandSelection].effectNames||[]).includes('テレポート')
-      && !myTeleportLock[myHandSelection];
-    teleportPanel.classList.toggle('hidden', !canOfferTeleport);
-    if(canOfferTeleport){
-      const sel = document.getElementById('solo-teleport-target-select');
-      sel.innerHTML = myDeck.map((c, i) => i === myHandSelection ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
-    }
-
     // --- オープン ---
     const board = document.getElementById('solo-field-board');
     if(picks.me && picks.opp){
       board.innerHTML = revealCardHtml('あなた', getBattleCard('me')) + revealCardHtml('仮想の相手', getBattleCard('opp'));
     } else {
       board.innerHTML = '<div class="field-slot-empty">カードを選んで「このカードを伏せて選ぶ」を押してください</div>';
+      document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
       document.getElementById('solo-initiative-panel').classList.add('hidden');
       document.getElementById('solo-judge-panel').classList.add('hidden');
       return;
@@ -530,6 +523,19 @@
     if(lastRoll && lastRoll.purpose){
       document.getElementById('solo-dice-note').textContent = `直近の用途: ${lastRoll.purpose}（1d${lastRoll.sides||4}）`;
     }
+
+    // --- テレポート発動判断（オープン後、相手のカードを見た上で決める） ---
+    if(picks.me.teleportDecided === false){
+      document.getElementById('solo-initiative-panel').classList.add('hidden');
+      document.getElementById('solo-judge-panel').classList.add('hidden');
+      document.getElementById('solo-teleport-decide-panel').classList.remove('hidden');
+      const originCard = myDeck[picks.me.cardIndex];
+      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。相手のカードを見た上で、デッキの別のカードを呼び出しますか？`;
+      const sel = document.getElementById('solo-teleport-target-select');
+      sel.innerHTML = myDeck.map((c,i) => i===picks.me.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      return;
+    }
+    document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
 
     // --- イニシアチブ ---
     resolveInitiativeIfNeeded();
@@ -608,7 +614,7 @@
   }
 
   function botPlayTurn(){
-    // 仮想の相手は即座に、支払える中からランダムに選ぶ（まれにテレポートも使う）
+    // 仮想の相手は即座に、支払える中からランダムに選ぶ（まれにテレポートも使う。判断は自分の手を伏せる時点で即決）
     const affordableOpp = oppDeck.map((c,i)=>i).filter(i => oppDeck[i].number <= ee.opp);
     const oppIdx = affordableOpp.length ? randomChoice(affordableOpp) : randomChoice(oppDeck.map((c,i)=>i));
     const oppCard = oppDeck[oppIdx];
@@ -616,9 +622,9 @@
     if((oppCard.effectNames||[]).includes('テレポート') && !oppTeleportLock[oppIdx] && Math.random() < 0.5){
       const others = oppDeck.map((c,i)=>i).filter(i => i !== oppIdx);
       const targetIdx = randomChoice(others);
-      picks.opp = { cardIndex: targetIdx, teleportOriginIdx: oppIdx };
+      picks.opp = { cardIndex: targetIdx, teleportOriginIdx: oppIdx, teleportDecided: true };
     } else {
-      picks.opp = { cardIndex: oppIdx, teleportOriginIdx: null };
+      picks.opp = { cardIndex: oppIdx, teleportOriginIdx: null, teleportDecided: true };
     }
   }
 
@@ -627,23 +633,28 @@
     const card = myDeck[myHandSelection];
     if(card.number > ee.me) return;
     ee.me -= card.number;
-    picks.me = { cardIndex: myHandSelection, teleportOriginIdx: null };
+    const needsDecision = (card.effectNames||[]).includes('テレポート') && !myTeleportLock[myHandSelection];
+    picks.me = { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsDecision };
     myHandSelection = null;
     botPlayTurn();
     renderSoloBattle();
   });
 
-  document.getElementById('btn-solo-lock-teleport').addEventListener('click', () => {
-    if(myHandSelection === null) return;
-    const originCard = myDeck[myHandSelection];
-    if(originCard.number > ee.me || myTeleportLock[myHandSelection]) return;
+  document.getElementById('btn-solo-teleport-activate').addEventListener('click', () => {
+    const pick = picks.me;
+    if(!pick || pick.teleportDecided) return;
+    const originIdx = pick.cardIndex;
     const targetIdx = parseInt(document.getElementById('solo-teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
-    ee.me -= originCard.number;
-    // 場に来るのは呼び出された側のカードそのもの。EEコストは元のカードの数字分を支払う。
-    picks.me = { cardIndex: targetIdx, teleportOriginIdx: myHandSelection };
-    myHandSelection = null;
-    botPlayTurn();
+    // 相手のカードを見た上で発動を判断する。場に来るのは呼び出された側のカードそのもの。EEは元カードの分のみで済む。
+    picks.me = { cardIndex: targetIdx, teleportOriginIdx: originIdx, teleportDecided: true };
+    renderSoloBattle();
+  });
+
+  document.getElementById('btn-solo-teleport-skip').addEventListener('click', () => {
+    const pick = picks.me;
+    if(!pick || pick.teleportDecided) return;
+    picks.me = { ...pick, teleportDecided: true };
     renderSoloBattle();
   });
 
