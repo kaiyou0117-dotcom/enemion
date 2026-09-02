@@ -529,17 +529,17 @@
   // ============ リロード対策：セッションの保存・復元 ============
   function saveSession(){
     try{
-      localStorage.setItem('enemion_session', JSON.stringify({
+      sessionStorage.setItem('enemion_session', JSON.stringify({
         roomId, memberId, myRole, myName, avatar: myAvatarDataUrl || null
       }));
     } catch(e){ /* 保存に失敗しても致命的ではないので無視 */ }
   }
   function clearSession(){
-    try{ localStorage.removeItem('enemion_session'); } catch(e){}
+    try{ sessionStorage.removeItem('enemion_session'); } catch(e){}
   }
   async function tryRestoreSession(){
     let saved;
-    try{ saved = JSON.parse(localStorage.getItem('enemion_session')); } catch(e){ saved = null; }
+    try{ saved = JSON.parse(sessionStorage.getItem('enemion_session')); } catch(e){ saved = null; }
     if(!saved || !saved.roomId || !saved.memberId || !saved.myRole || !saved.myName) return;
 
     roomId = saved.roomId;
