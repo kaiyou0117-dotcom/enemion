@@ -1410,16 +1410,20 @@
     const overlay = document.createElement('div');
     overlay.className = 'picker-overlay';
     overlay.innerHTML = `
-      <div class="picker-modal">
+      <div class="picker-modal status-picker-modal">
         <div class="picker-header">
           <span>状態異常・フィールド名を選ぶ</span>
           <button type="button" class="picker-close" aria-label="閉じる">✕</button>
         </div>
-        <div class="status-picker-free-row">
-          <input type="text" class="picker-search" id="status-picker-free-input" placeholder="任意の文字で直接書き込む…">
+        <div class="status-picker-body">
+          <div class="status-picker-left">
+            <input type="text" class="picker-search" id="status-picker-free-input" placeholder="任意の文字で直接書き込む…">
+            <div class="picker-grid" id="status-picker-grid"></div>
+          </div>
+          <div class="status-picker-right">
+            <div class="status-picker-desc" id="status-picker-desc"></div>
+          </div>
         </div>
-        <div class="picker-grid" id="status-picker-grid"></div>
-        <div class="status-picker-desc" id="status-picker-desc"></div>
         <div class="status-picker-footer">
           <button type="button" class="seal-btn" id="status-picker-confirm" style="width:auto; padding:10px 24px;" disabled>決定する</button>
         </div>
