@@ -174,6 +174,12 @@
               </div>
               <p class="ready-note" id="solo-type-ability-note"></p>
               <div class="judge-row">
+                <label style="margin:0;">あなた 次ターン獲得EE</label>
+                <input type="number" id="solo-next-ee-me" value="2" min="0">
+                <label style="margin:0;">相手 次ターン獲得EE</label>
+                <input type="number" id="solo-next-ee-opp" value="2" min="0">
+              </div>
+              <div class="judge-row">
                 <label style="margin:0;">獲得ポイント（win）</label>
                 <input type="number" id="solo-award-points" value="1" min="0">
               </div>
@@ -680,24 +686,30 @@
       (adv === 'A' ? 'あなたのタイプが有利（+1）' : adv === 'B' ? '相手のタイプが有利（+1）' : 'タイプ相性はニュートラル');
 
     let autoAdjMe = 0, autoAdjOpp = 0;
+    let autoNextEeMe = 2, autoNextEeOpp = 2;
     let abilityText = '';
     if(advType === 'atk'){
       if(advSlot === 'me') autoAdjOpp -= 1; else autoAdjMe -= 1;
       abilityText = `${advSlot==='me'?'あなた':'相手'}の攻撃タイプにより、相手の数字-1（下の補正欄に自動反映・調整可）。`;
     } else if(advType === 'def'){
-      abilityText = `${advSlot==='me'?'あなた':'相手'}の防御タイプにより、この番の確定時に次のターンのEEが+1されます。`;
+      if(advSlot === 'me') autoNextEeMe += 1; else autoNextEeOpp += 1;
+      abilityText = `${advSlot==='me'?'あなた':'相手'}の防御タイプにより、次ターン獲得EEに+1を反映済み（調整可）。`;
     } else if(advType === 'spd'){
       abilityText = `${advSlot==='me'?'あなた':'相手'}の速度タイプにより、先後を選択しました。`;
     }
-    if(myCard._teleported){ abilityText += `　あなたは「${escapeHtml(myCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${myCard.number}のカードを呼び出し中。`; }
-    if(oppCard._teleported){ abilityText += `　相手は「${escapeHtml(oppCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${oppCard.number}のカードを呼び出し中。`; }
+    if(myCard._teleported){ autoNextEeMe -= 1; abilityText += `　あなたは「${escapeHtml(myCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${myCard.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
+    if(oppCard._teleported){ autoNextEeOpp -= 1; abilityText += `　相手は「${escapeHtml(oppCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${oppCard.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
     document.getElementById('solo-type-ability-note').textContent = abilityText;
 
     const adjMeEl = document.getElementById('solo-adj-me');
     const adjOppEl = document.getElementById('solo-adj-opp');
+    const nextEeMeEl = document.getElementById('solo-next-ee-me');
+    const nextEeOppEl = document.getElementById('solo-next-ee-opp');
     if(judgePanelTurnMark !== turn){
       adjMeEl.value = autoAdjMe;
       adjOppEl.value = autoAdjOpp;
+      nextEeMeEl.value = Math.max(0, autoNextEeMe);
+      nextEeOppEl.value = Math.max(0, autoNextEeOpp);
       judgePanelTurnMark = turn;
     }
 
@@ -736,12 +748,11 @@
     if(winner === 'me') points.me += award;
     if(winner === 'opp') points.opp += award;
 
-    let eeBonusMe = 0, eeBonusOpp = 0;
-    if(advType === 'def' && advSlot === 'me') eeBonusMe += 1;
-    if(advType === 'def' && advSlot === 'opp') eeBonusOpp += 1;
-    if(myCard._teleported) eeBonusMe -= 1;
-    if(oppCard._teleported) eeBonusOpp -= 1;
-    ee = { me: Math.max(0, ee.me + 2 + eeBonusMe), opp: Math.max(0, ee.opp + 2 + eeBonusOpp) };
+    const nextEeMeInput = parseInt(document.getElementById('solo-next-ee-me').value, 10);
+    const nextEeOppInput = parseInt(document.getElementById('solo-next-ee-opp').value, 10);
+    const gainMe = Number.isFinite(nextEeMeInput) ? nextEeMeInput : 2;
+    const gainOpp = Number.isFinite(nextEeOppInput) ? nextEeOppInput : 2;
+    ee = { me: Math.max(0, ee.me + gainMe), opp: Math.max(0, ee.opp + gainOpp) };
 
     // テレポート使用時：発動元のカード自体は次に出す時1回テレポート不可にする。
     // ロックが掛かっているカードが今回（テレポートの有無に関わらず）改めて選ばれた場合は解除する。

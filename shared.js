@@ -369,7 +369,7 @@ export function validateDeckWide(cards){
 
 export function typeAdvantage(typeA, typeB){
     // 戻り値: 'A' | 'B' | null（有利側、なければnull）
-    const cycle = { atk:'spd', spd:'def', def:'atk' };
+    const cycle = { atk:'def', def:'spd', spd:'atk' };
     if(typeA==='spc' && typeB==='uni') return 'A';
     if(typeB==='spc' && typeA==='uni') return 'B';
     if(typeA==='spc' && ['atk','spd','def'].includes(typeB)) return 'B';
