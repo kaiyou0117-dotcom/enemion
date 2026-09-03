@@ -150,6 +150,7 @@
                   <div class="judge-admin-lock-cards" id="admin-lock-cards-p2"></div>
                 </div>
               </div>
+              <p class="ready-note">指定カードを出せなくする。また、任意のタイミングで解除可能（チェックを外すだけで即座に解除されます）。</p>
             </div>
 
             <!-- 特化タイプの性質選択（試合開始時、該当者のみ） -->
@@ -170,6 +171,12 @@
                 <div class="hand-section" id="my-hand-section">
                   <h3>あなたの手札（セレクト：出すカードを秘密に選ぶ）</h3>
                   <div class="hand-cards" id="my-hand"></div>
+                  <div id="four-count-row" class="hidden" style="margin-top:8px;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gold); cursor:pointer;">
+                      <input type="checkbox" id="chk-four-count">
+                      <span id="four-count-label">4カウントを使う</span>
+                    </label>
+                  </div>
                   <div style="margin-top:10px;">
                     <button class="ghost-btn" id="btn-lock-card" disabled>このカードを伏せて選ぶ</button>
                     <span class="ready-note" id="lock-status"></span>
@@ -495,9 +502,42 @@
       const div = document.createElement('div');
       div.className = 'member-card';
       const avatarHtml = m.avatar ? `<img class="avatar-thumb" src="${m.avatar}" alt="">` : '';
+      const canViewDeck = (m.slot === 'player1' || m.slot === 'player2') && (myRole === m.slot || myRole === 'judge');
       div.innerHTML = `<div class="role-label">${roleDisplay(m.slot)}</div><div class="member-name">${avatarHtml}${escapeHtml(m.name)}</div>`;
+      if(canViewDeck){
+        div.style.cursor = 'pointer';
+        div.title = 'タップしてデッキを見る';
+        div.addEventListener('click', () => openDeckViewModal(m.slot));
+      }
       target.appendChild(div);
     });
+  }
+
+  function openDeckViewModal(slot){
+    const deck = latestDecks[slot];
+    if(!deck || !deck.cards) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal">
+        <div class="picker-header">
+          <span>${escapeHtml(memberName(slot))}のデッキ</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div class="picker-grid" style="margin:14px 18px 18px; grid-template-columns:repeat(2,1fr);">
+          ${deck.cards.map(c => revealCardHtml(slot, c)).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    function close(){
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
   }
 
   // ============ 画面遷移の判定 ============
@@ -785,6 +825,7 @@
       lockedCards: { player1: [false,false,false,false], player2: [false,false,false,false] },
       teleportLock: { player1: {}, player2: {} },
       roundProposals: { player1: null, player2: null },
+      fourCountUsed: { player1: false, player2: false },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -806,8 +847,14 @@
       // ターンが進んだのでリセット（次のバトル裁定欄で自動値を入れ直す）
     }
 
-    document.getElementById('score-name-p1').textContent = memberName('player1');
-    document.getElementById('score-name-p2').textContent = memberName('player2');
+    const scoreNameP1 = document.getElementById('score-name-p1');
+    const scoreNameP2 = document.getElementById('score-name-p2');
+    scoreNameP1.textContent = memberName('player1');
+    scoreNameP2.textContent = memberName('player2');
+    scoreNameP1.style.cursor = (myRole === 'player1' || myRole === 'judge') ? 'pointer' : '';
+    scoreNameP2.style.cursor = (myRole === 'player2' || myRole === 'judge') ? 'pointer' : '';
+    scoreNameP1.onclick = (myRole === 'player1' || myRole === 'judge') ? () => openDeckViewModal('player1') : null;
+    scoreNameP2.onclick = (myRole === 'player2' || myRole === 'judge') ? () => openDeckViewModal('player2') : null;
     renderPips('pips-p1', latestBattle.points.player1);
     renderPips('pips-p2', latestBattle.points.player2);
     document.getElementById('turn-indicator').textContent = `第${latestBattle.turn}ターン`;
@@ -853,22 +900,43 @@
       const myEE = ee[myRole];
       const pick = latestBattle.picks ? latestBattle.picks[myRole] : null;
       const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
+
+      // --- 4カウント：試合中1回、劣勢時に4番カードの必要EEを差分だけ下げられる ---
+      const fourCountUsed = !!(latestBattle.fourCountUsed && latestBattle.fourCountUsed[myRole]);
+      const myPoints = (latestBattle.points && latestBattle.points[myRole]) || 0;
+      const oppPoints = (latestBattle.points && latestBattle.points[oppSlot(myRole)]) || 0;
+      const pointDiff = oppPoints - myPoints;
+      const fourCountEligible = !fourCountUsed && pointDiff > 0 && !(pick && pick.locked);
+      const fourCountRow = document.getElementById('four-count-row');
+      const chkFourCount = document.getElementById('chk-four-count');
+      fourCountRow.classList.toggle('hidden', !fourCountEligible);
+      if(fourCountEligible){
+        document.getElementById('four-count-label').textContent = `4カウントを使う（4番の必要EEを${pointDiff}下げる。試合中1回のみ）`;
+      } else if(!fourCountRow.classList.contains('hidden')){
+        chkFourCount.checked = false;
+      }
+      const useFourCountNow = fourCountEligible && chkFourCount.checked;
+
       (myDeck.cards || []).forEach((card, idx) => {
         const div = document.createElement('div');
         const isChosenThisTurn = pick && pick.locked && (pick.teleportOriginIdx != null ? pick.teleportOriginIdx === idx : pick.cardIndex === idx);
         const isLockedByJudge = !!myLocked[idx];
-        const affordable = card.number <= myEE && !isLockedByJudge;
+        const isFourCountTarget = useFourCountNow && idx === 3;
+        const effectiveCost = isFourCountTarget ? Math.max(0, card.number - pointDiff) : card.number;
+        const affordable = effectiveCost <= myEE && !isLockedByJudge;
         const isSelected = !pick && myHandSelection === idx;
         div.className = 'hand-card' + (isChosenThisTurn || isSelected ? ' selected' : '') + (!affordable ? ' unaffordable' : '');
         const thumb = card.image ? `<img src="${card.image}" alt="" style="width:100%; height:40px; object-fit:cover; border-radius:3px; margin-bottom:4px;">` : '';
-        const costNote = isLockedByJudge ? 'ジャッジにより使用禁止' : `必要EE: ${card.number}`;
+        const costNote = isLockedByJudge ? 'ジャッジにより使用禁止' : (isFourCountTarget ? `必要EE: ${effectiveCost}（4カウント適用）` : `必要EE: ${card.number}`);
         div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">${costNote}</div>`;
         if(affordable && !(pick && pick.locked)){
           div.addEventListener('click', () => { myHandSelection = idx; renderBattlePhase(); });
         }
         myHand.appendChild(div);
       });
-      const canLock = !(pick && pick.locked) && myHandSelection !== null && myDeck.cards[myHandSelection].number <= myEE && !myLocked[myHandSelection];
+      const selectedIsFourCount = useFourCountNow && myHandSelection === 3;
+      const selectedCost = myHandSelection !== null ? (selectedIsFourCount ? Math.max(0, myDeck.cards[myHandSelection].number - pointDiff) : myDeck.cards[myHandSelection].number) : null;
+      const canLock = !(pick && pick.locked) && myHandSelection !== null && selectedCost <= myEE && !myLocked[myHandSelection];
       document.getElementById('btn-lock-card').disabled = !canLock;
       document.getElementById('lock-status').textContent = (pick && pick.locked)
         ? (pick.teleportOriginIdx != null
@@ -995,8 +1063,8 @@
     if(eeDeductedForTurn === latestBattle.turn) return;
     eeDeductedForTurn = latestBattle.turn;
 
-    const p1Cost = latestDecks.player1.cards[p1Pick.cardIndex].number;
-    const p2Cost = latestDecks.player2.cards[p2Pick.cardIndex].number;
+    const p1Cost = Math.max(0, latestDecks.player1.cards[p1Pick.cardIndex].number - (p1Pick.fourCountReduction || 0));
+    const p2Cost = Math.max(0, latestDecks.player2.cards[p2Pick.cardIndex].number - (p2Pick.fourCountReduction || 0));
     const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
     update(ref(db, `rooms/${roomId}/battle/ee`), {
       player1: currentEe.player1 - p1Cost,
@@ -1115,7 +1183,7 @@
     updates['decks/player1'] = decks.player2 || null;
     updates['decks/player2'] = decks.player1 || null;
 
-    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock'];
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed'];
     perSlotFields.forEach(key => {
       if(battle[key]){
         updates[`battle/${key}`] = {
@@ -1172,11 +1240,23 @@
     const card = myDeck.cards[myHandSelection];
     const myEE = (latestBattle.ee && latestBattle.ee[myRole] !== undefined) ? latestBattle.ee[myRole] : 2;
     const myLocked = (latestBattle.lockedCards && latestBattle.lockedCards[myRole]) || [false,false,false,false];
-    if(card.number > myEE || myLocked[myHandSelection]) return;
+
+    const fourCountUsedAlready = !!(latestBattle.fourCountUsed && latestBattle.fourCountUsed[myRole]);
+    const myPoints = (latestBattle.points && latestBattle.points[myRole]) || 0;
+    const oppPoints = (latestBattle.points && latestBattle.points[oppSlot(myRole)]) || 0;
+    const pointDiff = oppPoints - myPoints;
+    const chkFourCount = document.getElementById('chk-four-count');
+    const useFourCount = !fourCountUsedAlready && pointDiff > 0 && myHandSelection === 3 && chkFourCount && chkFourCount.checked;
+    const cost = useFourCount ? Math.max(0, card.number - pointDiff) : card.number;
+
+    if(cost > myEE || myLocked[myHandSelection]) return;
     const needsTeleportDecision = (card.effectNames||[]).includes('テレポート') && !((latestBattle.teleportLock && latestBattle.teleportLock[myRole] && latestBattle.teleportLock[myRole][myHandSelection]));
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsTeleportDecision, locked: true });
+    const pickData = { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsTeleportDecision, locked: true };
+    if(useFourCount){ pickData.fourCountReduction = pointDiff; }
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), pickData);
+    if(useFourCount){ await update(ref(db, `rooms/${roomId}/battle/fourCountUsed`), { [myRole]: true }); }
     // EEはここでは消費しない（オープンの瞬間に消費する。セレクト段階でEEの増減が見えると、公開前にカードが推測できてしまうため）
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: useFourCount ? `カードを伏せて選んだ（セレクト、4カウント使用）。` : `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
     myHandSelection = null;
   });
 
@@ -1475,6 +1555,7 @@
       lockedCards:{player1:[false,false,false,false], player2:[false,false,false,false]},
       teleportLock:{player1:{}, player2:{}},
       roundProposals:{player1:null, player2:null},
+      fourCountUsed:{player1:false, player2:false},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
