@@ -502,7 +502,7 @@
       const div = document.createElement('div');
       div.className = 'member-card';
       const avatarHtml = m.avatar ? `<img class="avatar-thumb" src="${m.avatar}" alt="">` : '';
-      const canViewDeck = (m.slot === 'player1' || m.slot === 'player2') && (myRole === m.slot || myRole === 'judge');
+      const canViewDeck = (m.slot === 'player1' || m.slot === 'player2');
       div.innerHTML = `<div class="role-label">${roleDisplay(m.slot)}</div><div class="member-name">${avatarHtml}${escapeHtml(m.name)}</div>`;
       if(canViewDeck){
         div.style.cursor = 'pointer';
@@ -851,10 +851,10 @@
     const scoreNameP2 = document.getElementById('score-name-p2');
     scoreNameP1.textContent = memberName('player1');
     scoreNameP2.textContent = memberName('player2');
-    scoreNameP1.style.cursor = (myRole === 'player1' || myRole === 'judge') ? 'pointer' : '';
-    scoreNameP2.style.cursor = (myRole === 'player2' || myRole === 'judge') ? 'pointer' : '';
-    scoreNameP1.onclick = (myRole === 'player1' || myRole === 'judge') ? () => openDeckViewModal('player1') : null;
-    scoreNameP2.onclick = (myRole === 'player2' || myRole === 'judge') ? () => openDeckViewModal('player2') : null;
+    scoreNameP1.style.cursor = 'pointer';
+    scoreNameP2.style.cursor = 'pointer';
+    scoreNameP1.onclick = () => openDeckViewModal('player1');
+    scoreNameP2.onclick = () => openDeckViewModal('player2');
     renderPips('pips-p1', latestBattle.points.player1);
     renderPips('pips-p2', latestBattle.points.player2);
     document.getElementById('turn-indicator').textContent = `第${latestBattle.turn}ターン`;
