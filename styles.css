@@ -560,7 +560,7 @@
     color: var(--gold);
     margin-bottom: 6px;
   }
-  .judge-admin-lock-cards{ display:flex; flex-direction:column; gap: 4px; }
+  .judge-admin-lock-cards{ display:flex; flex-direction:column; gap: 8px; }
   .judge-admin-lock-cards label{
     display:flex;
     align-items:center;
@@ -569,6 +569,55 @@
     color: var(--ink);
     margin:0;
     cursor:pointer;
+  }
+  .judge-admin-card-row{
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: var(--panel-2);
+  }
+  .judge-admin-card-row-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 8px;
+  }
+  .judge-admin-card-row-top label{ flex:1; min-width:0; }
+  .card-effect-add-btn{
+    background: none;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    border-radius: 999px;
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .card-effect-badges{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .card-effect-badge{
+    display:inline-flex;
+    align-items:center;
+    gap: 4px;
+    background: rgba(201,162,39,0.15);
+    border: 1px solid var(--gold);
+    color: var(--ink);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .card-effect-remove{
+    background:none;
+    border:none;
+    color: var(--red-glow);
+    cursor:pointer;
+    font-size: 11px;
+    padding: 0;
+    line-height:1;
   }
 
   #mimic-select-panel, #initiative-panel{

@@ -826,6 +826,7 @@
       teleportLock: { player1: {}, player2: {} },
       roundProposals: { player1: null, player2: null },
       fourCountUsed: { player1: false, player2: false },
+      cardEffects: { player1: {}, player2: {} },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -1121,16 +1122,29 @@
     document.getElementById('admin-lock-label-p2').textContent = `${memberName('player2')}のカード`;
 
     const lockedCards = latestBattle.lockedCards || { player1:[false,false,false,false], player2:[false,false,false,false] };
+    const cardEffects = latestBattle.cardEffects || {};
     ['player1','player2'].forEach(slot => {
       const wrap = document.getElementById(`admin-lock-cards-${slot==='player1'?'p1':'p2'}`);
       wrap.innerHTML = '';
       const deck = latestDecks[slot];
       if(!deck) return;
       deck.cards.forEach((card, idx) => {
-        const label = document.createElement('label');
         const locked = !!(lockedCards[slot] && lockedCards[slot][idx]);
-        label.innerHTML = `<input type="checkbox" data-lock-slot="${slot}" data-lock-idx="${idx}" ${locked?'checked':''}> 数字${card.number}（${escapeHtml(card.name)||'無題'}）を使用禁止にする`;
-        wrap.appendChild(label);
+        const effectsForCard = (cardEffects[slot] && cardEffects[slot][idx]) || {};
+        const badgesHtml = Object.entries(effectsForCard).map(([effId, eff]) => {
+          const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
+          return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}］<button type="button" class="card-effect-remove" data-eff-slot="${slot}" data-eff-idx="${idx}" data-eff-id="${effId}">✕</button></span>`;
+        }).join('');
+        const row = document.createElement('div');
+        row.className = 'judge-admin-card-row';
+        row.innerHTML = `
+          <div class="judge-admin-card-row-top">
+            <label><input type="checkbox" data-lock-slot="${slot}" data-lock-idx="${idx}" ${locked?'checked':''}> 数字${card.number}（${escapeHtml(card.name)||'無題'}）を使用禁止にする</label>
+            <button type="button" class="card-effect-add-btn" data-add-slot="${slot}" data-add-idx="${idx}" title="このカードに効果・状態を追加">＋効果</button>
+          </div>
+          ${badgesHtml ? `<div class="card-effect-badges">${badgesHtml}</div>` : ''}
+        `;
+        wrap.appendChild(row);
       });
     });
     document.querySelectorAll('[data-lock-slot]').forEach(cb => {
@@ -1142,6 +1156,114 @@
         await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}のカードを${cb.checked?'使用禁止に':'使用可能に'}した。`, ts: Date.now() });
       });
     });
+    document.querySelectorAll('[data-add-slot]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openCardEffectModal(btn.dataset.addSlot, parseInt(btn.dataset.addIdx, 10));
+      });
+    });
+    document.querySelectorAll('.card-effect-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const slot = btn.dataset.effSlot, idx = btn.dataset.effIdx, effId = btn.dataset.effId;
+        const snap = await get(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`));
+        const removed = snap.val();
+        await remove(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`));
+        if(removed){
+          const card = latestDecks[slot].cards[idx];
+          await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}のカードから「${removed.name}」を解除した。`, ts: Date.now() });
+        }
+      });
+    });
+  }
+
+  // カードへの効果・状態付与モーダル（ジャッジ専用）
+  function openCardEffectModal(slot, idx){
+    const card = latestDecks[slot].cards[idx];
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal status-picker-modal">
+        <div class="picker-header">
+          <span>${escapeHtml(memberName(slot))}の数字${card.number}「${escapeHtml(card.name)||'無題'}」に効果を追加</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div class="status-picker-body">
+          <div class="status-picker-left">
+            <input type="text" class="picker-search" id="card-eff-free-input" placeholder="任意の文字で直接書き込む…">
+            <div class="picker-grid" id="card-eff-grid"></div>
+          </div>
+          <div class="status-picker-right">
+            <div class="status-picker-desc" id="card-eff-desc"></div>
+          </div>
+        </div>
+        <div class="judge-admin-row" style="margin:0 18px 10px;">
+          <label style="margin:0;">補足（任意）</label>
+          <input type="text" id="card-eff-note" placeholder="例：次に出す味方に付与済み" style="flex:1;">
+        </div>
+        <div class="judge-admin-row" style="margin:0 18px 14px;">
+          <label style="margin:0;">継続ターン数</label>
+          <input type="text" id="card-eff-duration" placeholder="空欄=永続、数字を入力">
+        </div>
+        <div class="status-picker-footer">
+          <button type="button" class="seal-btn" id="card-eff-confirm" style="width:auto; padding:10px 24px;" disabled>この内容で追加する</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const grid = overlay.querySelector('#card-eff-grid');
+    grid.innerHTML = STATUS_NAME_PRESETS.map(p => `<button type="button" class="picker-card" data-name="${escapeHtml(p.name)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(p.name)}</span></div></button>`).join('');
+
+    const descEl = overlay.querySelector('#card-eff-desc');
+    const confirmBtn = overlay.querySelector('#card-eff-confirm');
+    const freeInput = overlay.querySelector('#card-eff-free-input');
+    let pendingName = '';
+
+    function close(){
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+
+    function stagePreset(name, text){
+      pendingName = name;
+      freeInput.value = '';
+      descEl.innerHTML = `<div class="status-picker-desc-label">効果</div><div class="status-picker-desc-body">${escapeHtml(text)}</div>`;
+      confirmBtn.disabled = false;
+      grid.querySelectorAll('.picker-card').forEach(c => c.classList.toggle('selected', c.dataset.name === name));
+    }
+
+    grid.querySelectorAll('[data-name]').forEach(btn => {
+      const preset = STATUS_NAME_PRESETS.find(p => p.name === btn.dataset.name);
+      btn.addEventListener('click', () => stagePreset(preset.name, preset.text));
+    });
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+
+    freeInput.addEventListener('input', () => {
+      pendingName = freeInput.value;
+      descEl.innerHTML = '';
+      confirmBtn.disabled = !freeInput.value.trim();
+      grid.querySelectorAll('.picker-card').forEach(c => c.classList.remove('selected'));
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+      const name = pendingName.trim();
+      if(!name) return;
+      const note = overlay.querySelector('#card-eff-note').value.trim();
+      const durationRaw = overlay.querySelector('#card-eff-duration').value.trim();
+      let remainingTurns = null;
+      if(durationRaw !== '' && durationRaw !== '永続'){
+        const n = parseInt(durationRaw, 10);
+        if(Number.isFinite(n) && n > 0){ remainingTurns = n; }
+      }
+      await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), { name, note: note || null, remainingTurns, addedBy: myName, ts: Date.now() });
+      const durationNote = remainingTurns == null ? '永続' : `あと${remainingTurns}ターンで消滅`;
+      await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}${note?'（'+note+'）':''}」を付与した（${durationNote}）。`, ts: Date.now() });
+      close();
+    });
+
+    freeInput.focus();
   }
 
   document.getElementById('btn-admin-apply-ee').addEventListener('click', async () => {
@@ -1183,7 +1305,7 @@
     updates['decks/player1'] = decks.player2 || null;
     updates['decks/player2'] = decks.player1 || null;
 
-    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed'];
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed','cardEffects'];
     perSlotFields.forEach(key => {
       if(battle[key]){
         updates[`battle/${key}`] = {
@@ -1411,6 +1533,13 @@
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
     const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】「${escapeHtml(card._teleportOrigin.name)||'無題'}」から呼び出された</div>` : '';
+    const pick = latestBattle.picks && latestBattle.picks[slot];
+    const cardIdx = pick ? pick.cardIndex : null;
+    const attachedEffects = (cardIdx != null && latestBattle.cardEffects && latestBattle.cardEffects[slot] && latestBattle.cardEffects[slot][cardIdx]) || {};
+    const attachedHtml = Object.values(attachedEffects).map(eff => {
+      const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
+      return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}］</span>`;
+    }).join('');
     return `
       <div class="reveal-card">
         <div class="rc-side">${escapeHtml(memberName(slot))}</div>
@@ -1419,6 +1548,7 @@
         <div class="rc-num">${card.number}</div>
         <div class="rc-meta">${escapeHtml(card.species)} ／ ${TYPE_LABEL[card.type]}</div>
         ${teleportNote}
+        ${attachedHtml ? `<div class="card-effect-badges">${attachedHtml}</div>` : ''}
         ${effectsHtml ? `<div class="rc-effects">${effectsHtml}</div>` : ''}
         ${card.flavor ? `<div class="rc-effects" style="font-style:italic; color:var(--ink-dim);">${escapeHtml(card.flavor)}</div>` : ''}
       </div>
@@ -1508,6 +1638,27 @@
         await update(ref(db, `rooms/${roomId}/statusEffects/${id}`), { remainingTurns: nextRemaining });
       }
     }
+
+    // カードに付与された効果・状態も同様に減少・自動消滅させる
+    const ceSnap = await get(ref(db, `rooms/${roomId}/battle/cardEffects`));
+    const ceData = ceSnap.val() || {};
+    for(const slot of ['player1','player2']){
+      const perCard = ceData[slot] || {};
+      for(const [idx, effs] of Object.entries(perCard)){
+        for(const [effId, item] of Object.entries(effs || {})){
+          if(item.remainingTurns == null) continue;
+          const nextRemaining = item.remainingTurns - 1;
+          const card = latestDecks[slot] && latestDecks[slot].cards[idx];
+          const cardLabel = card ? `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」` : `${memberName(slot)}のカード`;
+          if(nextRemaining <= 0){
+            await remove(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`));
+            await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`${cardLabel}の「${item.name}」が0ターンになり消滅した。`, ts: Date.now() });
+          } else {
+            await update(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`), { remainingTurns: nextRemaining });
+          }
+        }
+      }
+    }
   }
 
   document.getElementById('btn-confirm-round').addEventListener('click', async () => {
@@ -1556,6 +1707,7 @@
       teleportLock:{player1:{}, player2:{}},
       roundProposals:{player1:null, player2:null},
       fourCountUsed:{player1:false, player2:false},
+      cardEffects:{player1:{}, player2:{}},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
