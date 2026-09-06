@@ -643,6 +643,30 @@
     { name: '滅亡', text: '4ターン経過した時点で、その試合に勝利する。' }
   ];
 
+  // カードに直接付与する専用の効果一覧（ジャッジの「＋効果」モーダル用）
+  const CARD_EFFECT_PRESETS = [
+    { name: '風', text: 'この試合中、風が使われるたび、風を持つカードの数字が+1される。重複可、最大+4。' },
+    { name: '菌', text: '付与されたカードが菌を持つ状態になる。重複可。' },
+    { name: '種', text: '大自然の場で迎えたターン終了時に、芽へ変化する。' },
+    { name: '芽', text: 'ターン開始時、自分の数字を永続で+1する。大自然の場ならターン終了時に花へ変化する。' },
+    { name: '花', text: '自分の数字を+2し、味方に種を与える。大自然の場ならもう一度発動する。' },
+    { name: '潜水', text: '水浸しの場では、潜水を持たない相手から効果の対象に選ばれない。後手発動の効果を1つまで回避する。' },
+    { name: '飛行', text: '飛行を持たない相手からの効果を1つまで回避する。' },
+    { name: '音波', text: '音波を持つカードの数に応じて、音波の効果で設定した数字が下がる。音波自体は味方カードに付与できる。' },
+    { name: '火傷状態', text: '数字-1。重複可。4つ重なるごとにメリット効果を1つ使用不能にする。' },
+    { name: '凍結状態', text: '数字が1以下のカードは出せない。重複するたび対象の数字が上がる。火傷状態になると即座に解除される。' },
+    { name: '麻痺状態', text: '相性が常に不利になる。次に出た時、メリット効果を1つ使えない。重複すると使用不能回数が増える。' },
+    { name: '毒状態', text: 'ターン経過ごとに数字が永続的に-1されていく（累計値が自動で増えていく）。累計経過ターンが4以上になると敗北する。', isPoison: true },
+    { name: '感染状態', text: 'デッキ内の感染状態1つにつき自分の数字-1。次に出す自分のカードにも感染する。重複可。' },
+    { name: '不安定な状態', text: '1d3を振り、1が出た場合のみ数字-1し、そのターンは数字が増えなくなる。重複可。' },
+    { name: '出血状態', text: '数字-1、かつ攻撃効果を1つ使用不能にする。メリット効果を全て放棄すれば解除できる。重複可。' },
+    { name: '睡眠状態', text: '数字を0にし、+効果を受け付けなくする。次に出た時メリット効果を1回発動できず、その後すべての状態異常が解除される。' },
+    { name: '相伝継承', text: '対象カードの数字を、継承元の数字の分だけ永続+1する。加えて相伝継承か他のメリット効果を1つ付与する。' },
+    { name: 'エネミー化', text: '対象カードは次に出た時、〈異能〉を2回発動する。元々エネミーでなければ、暴走とエネミー化も併せて付与する。' },
+    { name: '機械', text: '機械として扱われ、機械以外の相手からの攻撃・状態異常では数字が減らない。無能力者でも〈異能〉を持てるようになる。' },
+    { name: '異産', text: '異産を持つカードとして扱われ、無能力者でも〈異能〉を持てるようになる。' }
+  ];
+
   function renderBuildPhase(){
     if(myRole !== 'player1' && myRole !== 'player2') return; // 編成できるのはプレイヤーのみ
     const grid = document.getElementById('deck-grid');
@@ -1146,7 +1170,7 @@
         const locked = !!(lockedCards[slot] && lockedCards[slot][idx]);
         const effectsForCard = (cardEffects[slot] && cardEffects[slot][idx]) || {};
         const badgesHtml = Object.entries(effectsForCard).map(([effId, eff]) => {
-          const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
+          const durationNote = eff.growPerTurn ? `累計${eff.elapsedTurns||0}T` : (eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`);
           const deltaNote = eff.numberDelta ? `／数字${eff.numberDelta>0?'+':''}${eff.numberDelta}` : '';
           return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}${deltaNote}］<button type="button" class="card-effect-remove" data-eff-slot="${slot}" data-eff-idx="${idx}" data-eff-id="${effId}">✕</button></span>`;
         }).join('');
@@ -1228,12 +1252,15 @@
     document.body.appendChild(overlay);
 
     const grid = overlay.querySelector('#card-eff-grid');
-    grid.innerHTML = STATUS_NAME_PRESETS.map(p => `<button type="button" class="picker-card" data-name="${escapeHtml(p.name)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(p.name)}</span></div></button>`).join('');
+    grid.innerHTML = CARD_EFFECT_PRESETS.map(p => `<button type="button" class="picker-card" data-name="${escapeHtml(p.name)}"><div class="picker-card-head"><span class="picker-card-name">${escapeHtml(p.name)}</span></div></button>`).join('');
 
     const descEl = overlay.querySelector('#card-eff-desc');
     const confirmBtn = overlay.querySelector('#card-eff-confirm');
     const freeInput = overlay.querySelector('#card-eff-free-input');
+    const deltaInput = overlay.querySelector('#card-eff-number-delta');
+    const durationInput = overlay.querySelector('#card-eff-duration');
     let pendingName = '';
+    let pendingIsPoison = false;
 
     function close(){
       overlay.remove();
@@ -1241,17 +1268,30 @@
     }
     function onKeydown(e){ if(e.key === 'Escape') close(); }
 
-    function stagePreset(name, text){
+    function stagePreset(name, text, isPoison){
       pendingName = name;
+      pendingIsPoison = !!isPoison;
       freeInput.value = '';
-      descEl.innerHTML = `<div class="status-picker-desc-label">効果</div><div class="status-picker-desc-body">${escapeHtml(text)}</div>`;
+      let desc = `<div class="status-picker-desc-label">効果</div><div class="status-picker-desc-body">${escapeHtml(text)}</div>`;
       confirmBtn.disabled = false;
       grid.querySelectorAll('.picker-card').forEach(c => c.classList.toggle('selected', c.dataset.name === name));
+      deltaInput.disabled = pendingIsPoison;
+      durationInput.disabled = pendingIsPoison;
+      if(pendingIsPoison){
+        deltaInput.value = '';
+        deltaInput.placeholder = '毒状態は自動で-1ずつ増えていきます';
+        durationInput.value = '';
+        durationInput.placeholder = '毒状態は永続・累計ターンで自動管理されます';
+      } else {
+        deltaInput.placeholder = '例：+1、-2（空欄=変化なし）';
+        durationInput.placeholder = '空欄=永続、数字を入力';
+      }
+      descEl.innerHTML = desc;
     }
 
     grid.querySelectorAll('[data-name]').forEach(btn => {
-      const preset = STATUS_NAME_PRESETS.find(p => p.name === btn.dataset.name);
-      btn.addEventListener('click', () => stagePreset(preset.name, preset.text));
+      const preset = CARD_EFFECT_PRESETS.find(p => p.name === btn.dataset.name);
+      btn.addEventListener('click', () => stagePreset(preset.name, preset.text, preset.isPoison));
     });
     overlay.querySelector('.picker-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
@@ -1259,6 +1299,11 @@
 
     freeInput.addEventListener('input', () => {
       pendingName = freeInput.value;
+      pendingIsPoison = false;
+      deltaInput.disabled = false;
+      durationInput.disabled = false;
+      deltaInput.placeholder = '例：+1、-2（空欄=変化なし）';
+      durationInput.placeholder = '空欄=永続、数字を入力';
       descEl.innerHTML = '';
       confirmBtn.disabled = !freeInput.value.trim();
       grid.querySelectorAll('.picker-card').forEach(c => c.classList.remove('selected'));
@@ -1267,13 +1312,24 @@
     confirmBtn.addEventListener('click', async () => {
       const name = pendingName.trim();
       if(!name) return;
-      const durationRaw = overlay.querySelector('#card-eff-duration').value.trim();
+
+      if(pendingIsPoison){
+        // 毒状態は永続・累計ターンで自動管理し、ターン経過ごとに-1ずつ実際に増えていく
+        await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), {
+          name, note: null, remainingTurns: null, numberDelta: 0, growPerTurn: -1, elapsedTurns: 0, addedBy: myName, ts: Date.now()
+        });
+        await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}」を付与した（ターンごとに数字-1が累積）。`, ts: Date.now() });
+        close();
+        return;
+      }
+
+      const durationRaw = durationInput.value.trim();
       let remainingTurns = null;
       if(durationRaw !== '' && durationRaw !== '永続'){
         const n = parseInt(durationRaw, 10);
         if(Number.isFinite(n) && n > 0){ remainingTurns = n; }
       }
-      const deltaRaw = overlay.querySelector('#card-eff-number-delta').value.trim();
+      const deltaRaw = deltaInput.value.trim();
       let numberDelta = 0;
       if(deltaRaw !== ''){
         const d = parseInt(deltaRaw, 10);
@@ -1561,7 +1617,7 @@
     const cardIdx = pick ? pick.cardIndex : null;
     const attachedEffects = (cardIdx != null && latestBattle.cardEffects && latestBattle.cardEffects[slot] && latestBattle.cardEffects[slot][cardIdx]) || {};
     const attachedHtml = Object.values(attachedEffects).map(eff => {
-      const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
+      const durationNote = eff.growPerTurn ? `累計${eff.elapsedTurns||0}T` : (eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`);
       const deltaNote = eff.numberDelta ? `／数字${eff.numberDelta>0?'+':''}${eff.numberDelta}` : '';
       return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}${deltaNote}］</span>`;
     }).join('');
@@ -1671,10 +1727,22 @@
       const perCard = ceData[slot] || {};
       for(const [idx, effs] of Object.entries(perCard)){
         for(const [effId, item] of Object.entries(effs || {})){
-          if(item.remainingTurns == null) continue;
-          const nextRemaining = item.remainingTurns - 1;
           const card = latestDecks[slot] && latestDecks[slot].cards[idx];
           const cardLabel = card ? `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」` : `${memberName(slot)}のカード`;
+
+          // growPerTurn付き（毒状態など）：ターンごとに実際の数値が累積して増減する
+          if(item.growPerTurn){
+            const newDelta = (item.numberDelta || 0) + item.growPerTurn;
+            const newElapsed = (item.elapsedTurns || 0) + 1;
+            await update(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`), { numberDelta: newDelta, elapsedTurns: newElapsed });
+            if(newElapsed >= 4){
+              await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`${cardLabel}の「${item.name}」が累計${newElapsed}ターンに達した（敗北条件に注意）。`, ts: Date.now() });
+            }
+            continue;
+          }
+
+          if(item.remainingTurns == null) continue;
+          const nextRemaining = item.remainingTurns - 1;
           if(nextRemaining <= 0){
             await remove(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}/${effId}`));
             await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`${cardLabel}の「${item.name}」が0ターンになり消滅した。`, ts: Date.now() });
