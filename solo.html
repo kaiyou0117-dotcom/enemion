@@ -326,7 +326,7 @@
   function getEffectiveNumber(who, idx){
     const deck = who === 'me' ? myDeck : oppDeck;
     const base = deck[idx].number;
-    return base + getCardNumberDelta(who, idx);
+    return Math.max(0, base + getCardNumberDelta(who, idx));
   }
 
   let oppTeleportLock = {};
@@ -832,8 +832,8 @@
     function recalc(){
       const adjMe = parseInt(adjMeEl.value || '0', 10);
       const adjOpp = parseInt(adjOppEl.value || '0', 10);
-      const meTotal = myCard.number + adjMe + (adv==='A'?1:0);
-      const oppTotal = oppCard.number + adjOpp + (adv==='B'?1:0);
+      const meTotal = Math.max(0, myCard.number + adjMe + (adv==='A'?1:0));
+      const oppTotal = Math.max(0, oppCard.number + adjOpp + (adv==='B'?1:0));
       const suggested = meTotal > oppTotal ? 'me' : (oppTotal > meTotal ? 'opp' : 'draw');
       const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
       if(radio) radio.checked = true;

@@ -1076,7 +1076,7 @@
   // カード付与効果による補正後の数字を返す（EEコスト・戦闘計算はこちらを使う）
   function getEffectiveNumber(slot, idx){
     const base = latestDecks[slot].cards[idx].number;
-    return base + getCardNumberDelta(slot, idx);
+    return Math.max(0, base + getCardNumberDelta(slot, idx));
   }
 
   // テレポート発動時は、指定したデッキ内のカードが名前・数字・タイプ・効果すべてそのまま場に来る（一部の数値だけ借りるのではない）
@@ -1550,8 +1550,8 @@
     function recalcSuggestion(){
       const adjP1 = parseInt(adjP1El.value || '0', 10);
       const adjP2 = parseInt(adjP2El.value || '0', 10);
-      let p1Total = p1Card.number + adjP1 + (adv==='A' ? 1 : 0);
-      let p2Total = p2Card.number + adjP2 + (adv==='B' ? 1 : 0);
+      let p1Total = Math.max(0, p1Card.number + adjP1 + (adv==='A' ? 1 : 0));
+      let p2Total = Math.max(0, p2Card.number + adjP2 + (adv==='B' ? 1 : 0));
       let suggested = p1Total > p2Total ? 'player1' : (p2Total > p1Total ? 'player2' : 'draw');
       const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
       if(radio) radio.checked = true;
