@@ -922,27 +922,29 @@
         const div = document.createElement('div');
         const isChosenThisTurn = pick && pick.locked && (pick.teleportOriginIdx != null ? pick.teleportOriginIdx === idx : pick.cardIndex === idx);
         const isLockedByJudge = !!myLocked[idx];
+        const baseNumber = getEffectiveNumber(myRole, idx);
         const isFourCountTarget = useFourCountNow && idx === 3;
-        const effectiveCost = isFourCountTarget ? Math.max(0, card.number - pointDiff) : card.number;
+        const effectiveCost = isFourCountTarget ? Math.max(0, baseNumber - pointDiff) : baseNumber;
         const affordable = effectiveCost <= myEE && !isLockedByJudge;
         const isSelected = !pick && myHandSelection === idx;
         div.className = 'hand-card' + (isChosenThisTurn || isSelected ? ' selected' : '') + (!affordable ? ' unaffordable' : '');
         const thumb = card.image ? `<img src="${card.image}" alt="" style="width:100%; height:40px; object-fit:cover; border-radius:3px; margin-bottom:4px;">` : '';
-        const costNote = isLockedByJudge ? 'ジャッジにより使用禁止' : (isFourCountTarget ? `必要EE: ${effectiveCost}（4カウント適用）` : `必要EE: ${card.number}`);
-        div.innerHTML = `${thumb}<div class="hc-num">${card.number}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">${costNote}</div>`;
+        const costNote = isLockedByJudge ? 'ジャッジにより使用禁止' : (isFourCountTarget ? `必要EE: ${effectiveCost}（4カウント適用）` : `必要EE: ${baseNumber}`);
+        div.innerHTML = `${thumb}<div class="hc-num">${baseNumber}</div><div class="hc-name">${escapeHtml(card.name)}</div><div class="hc-type">${TYPE_LABEL[card.type]}</div><div class="hand-card-cost">${costNote}</div>`;
         if(affordable && !(pick && pick.locked)){
           div.addEventListener('click', () => { myHandSelection = idx; renderBattlePhase(); });
         }
         myHand.appendChild(div);
       });
       const selectedIsFourCount = useFourCountNow && myHandSelection === 3;
-      const selectedCost = myHandSelection !== null ? (selectedIsFourCount ? Math.max(0, myDeck.cards[myHandSelection].number - pointDiff) : myDeck.cards[myHandSelection].number) : null;
+      const selectedBaseNumber = myHandSelection !== null ? getEffectiveNumber(myRole, myHandSelection) : null;
+      const selectedCost = myHandSelection !== null ? (selectedIsFourCount ? Math.max(0, selectedBaseNumber - pointDiff) : selectedBaseNumber) : null;
       const canLock = !(pick && pick.locked) && myHandSelection !== null && selectedCost <= myEE && !myLocked[myHandSelection];
       document.getElementById('btn-lock-card').disabled = !canLock;
       document.getElementById('lock-status').textContent = (pick && pick.locked)
         ? (pick.teleportOriginIdx != null
-            ? `【テレポート】で数字${myDeck.cards[pick.cardIndex].number}のカードを呼び出しました。相手を待っています。`
-            : `数字${myDeck.cards[pick.cardIndex].number}のカードを伏せて選びました。相手を待っています。`)
+            ? `【テレポート】で数字${getEffectiveNumber(myRole, pick.cardIndex)}のカードを呼び出しました。相手を待っています。`
+            : `数字${getEffectiveNumber(myRole, pick.cardIndex)}のカードを伏せて選びました。相手を待っています。`)
         : (myEE < 1 ? 'EEが足りず、出せるカードがありません。' : '');
 
       oppHandSection.classList.add('hidden');
@@ -1042,15 +1044,27 @@
     resolveRoundProposalsIfNeeded();
   }
 
+  // ジャッジがカードに付与した「数字補正」効果の合計値を返す
+  function getCardNumberDelta(slot, idx){
+    const effs = (latestBattle.cardEffects && latestBattle.cardEffects[slot] && latestBattle.cardEffects[slot][idx]) || {};
+    return Object.values(effs).reduce((sum, e) => sum + (e.numberDelta || 0), 0);
+  }
+  // カード付与効果による補正後の数字を返す（EEコスト・戦闘計算はこちらを使う）
+  function getEffectiveNumber(slot, idx){
+    const base = latestDecks[slot].cards[idx].number;
+    return base + getCardNumberDelta(slot, idx);
+  }
+
   // テレポート発動時は、指定したデッキ内のカードが名前・数字・タイプ・効果すべてそのまま場に来る（一部の数値だけ借りるのではない）
   function getBattleCard(slot){
     const pick = latestBattle.picks[slot];
     const card = latestDecks[slot].cards[pick.cardIndex];
+    const effectiveNumber = getEffectiveNumber(slot, pick.cardIndex);
     if(pick.teleportOriginIdx !== null && pick.teleportOriginIdx !== undefined){
       const originCard = latestDecks[slot].cards[pick.teleportOriginIdx];
-      return { ...card, _teleported: true, _teleportOrigin: originCard };
+      return { ...card, number: effectiveNumber, _teleported: true, _teleportOrigin: originCard };
     }
-    return card;
+    return { ...card, number: effectiveNumber };
   }
 
   // 両者ロック（オープン）の瞬間にEEをまとめて消費する。
@@ -1064,8 +1078,8 @@
     if(eeDeductedForTurn === latestBattle.turn) return;
     eeDeductedForTurn = latestBattle.turn;
 
-    const p1Cost = Math.max(0, latestDecks.player1.cards[p1Pick.cardIndex].number - (p1Pick.fourCountReduction || 0));
-    const p2Cost = Math.max(0, latestDecks.player2.cards[p2Pick.cardIndex].number - (p2Pick.fourCountReduction || 0));
+    const p1Cost = Math.max(0, getEffectiveNumber('player1', p1Pick.cardIndex) - (p1Pick.fourCountReduction || 0));
+    const p2Cost = Math.max(0, getEffectiveNumber('player2', p2Pick.cardIndex) - (p2Pick.fourCountReduction || 0));
     const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
     update(ref(db, `rooms/${roomId}/battle/ee`), {
       player1: currentEe.player1 - p1Cost,
@@ -1133,13 +1147,16 @@
         const effectsForCard = (cardEffects[slot] && cardEffects[slot][idx]) || {};
         const badgesHtml = Object.entries(effectsForCard).map(([effId, eff]) => {
           const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
-          return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}］<button type="button" class="card-effect-remove" data-eff-slot="${slot}" data-eff-idx="${idx}" data-eff-id="${effId}">✕</button></span>`;
+          const deltaNote = eff.numberDelta ? `／数字${eff.numberDelta>0?'+':''}${eff.numberDelta}` : '';
+          return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}${deltaNote}］<button type="button" class="card-effect-remove" data-eff-slot="${slot}" data-eff-idx="${idx}" data-eff-id="${effId}">✕</button></span>`;
         }).join('');
         const row = document.createElement('div');
         row.className = 'judge-admin-card-row';
+        const effNum = getEffectiveNumber(slot, idx);
+        const numLabel = effNum !== card.number ? `数字${card.number}→${effNum}` : `数字${card.number}`;
         row.innerHTML = `
           <div class="judge-admin-card-row-top">
-            <label><input type="checkbox" data-lock-slot="${slot}" data-lock-idx="${idx}" ${locked?'checked':''}> 数字${card.number}（${escapeHtml(card.name)||'無題'}）を使用禁止にする</label>
+            <label><input type="checkbox" data-lock-slot="${slot}" data-lock-idx="${idx}" ${locked?'checked':''}> ${numLabel}（${escapeHtml(card.name)||'無題'}）を使用禁止にする</label>
             <button type="button" class="card-effect-add-btn" data-add-slot="${slot}" data-add-idx="${idx}" title="このカードに効果・状態を追加">＋効果</button>
           </div>
           ${badgesHtml ? `<div class="card-effect-badges">${badgesHtml}</div>` : ''}
@@ -1194,6 +1211,10 @@
           <div class="status-picker-right">
             <div class="status-picker-desc" id="card-eff-desc"></div>
           </div>
+        </div>
+        <div class="judge-admin-row" style="margin:16px 18px 8px; gap:10px;">
+          <label style="margin:0; font-size:11px; color:var(--ink-dim); white-space:nowrap;">数字補正（任意）</label>
+          <input type="text" id="card-eff-number-delta" placeholder="例：+1、-2（空欄=変化なし）" style="flex:1;">
         </div>
         <div class="judge-admin-row" style="margin:0 18px 14px; gap:10px;">
           <label style="margin:0; font-size:11px; color:var(--ink-dim); white-space:nowrap;">継続ターン数</label>
@@ -1252,9 +1273,16 @@
         const n = parseInt(durationRaw, 10);
         if(Number.isFinite(n) && n > 0){ remainingTurns = n; }
       }
-      await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), { name, note: null, remainingTurns, addedBy: myName, ts: Date.now() });
+      const deltaRaw = overlay.querySelector('#card-eff-number-delta').value.trim();
+      let numberDelta = 0;
+      if(deltaRaw !== ''){
+        const d = parseInt(deltaRaw, 10);
+        if(Number.isFinite(d)){ numberDelta = d; }
+      }
+      await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), { name, note: null, remainingTurns, numberDelta, addedBy: myName, ts: Date.now() });
       const durationNote = remainingTurns == null ? '永続' : `あと${remainingTurns}ターンで消滅`;
-      await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}」を付与した（${durationNote}）。`, ts: Date.now() });
+      const deltaNote = numberDelta !== 0 ? `／数字${numberDelta>0?'+':''}${numberDelta}` : '';
+      await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}」を付与した（${durationNote}${deltaNote}）。`, ts: Date.now() });
       close();
     });
 
@@ -1364,7 +1392,8 @@
     const pointDiff = oppPoints - myPoints;
     const chkFourCount = document.getElementById('chk-four-count');
     const useFourCount = !fourCountUsedAlready && pointDiff > 0 && myHandSelection === 3 && chkFourCount && chkFourCount.checked;
-    const cost = useFourCount ? Math.max(0, card.number - pointDiff) : card.number;
+    const baseNumber = getEffectiveNumber(myRole, myHandSelection);
+    const cost = useFourCount ? Math.max(0, baseNumber - pointDiff) : baseNumber;
 
     if(cost > myEE || myLocked[myHandSelection]) return;
     const needsTeleportDecision = (card.effectNames||[]).includes('テレポート') && !((latestBattle.teleportLock && latestBattle.teleportLock[myRole] && latestBattle.teleportLock[myRole][myHandSelection]));
@@ -1533,7 +1562,8 @@
     const attachedEffects = (cardIdx != null && latestBattle.cardEffects && latestBattle.cardEffects[slot] && latestBattle.cardEffects[slot][cardIdx]) || {};
     const attachedHtml = Object.values(attachedEffects).map(eff => {
       const durationNote = eff.remainingTurns == null ? '永続' : `あと${eff.remainingTurns}T`;
-      return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}］</span>`;
+      const deltaNote = eff.numberDelta ? `／数字${eff.numberDelta>0?'+':''}${eff.numberDelta}` : '';
+      return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}${deltaNote}］</span>`;
     }).join('');
     return `
       <div class="reveal-card">
