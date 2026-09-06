@@ -1195,10 +1195,6 @@
             <div class="status-picker-desc" id="card-eff-desc"></div>
           </div>
         </div>
-        <div class="judge-admin-row" style="margin:0 18px 10px; gap:10px;">
-          <label style="margin:0; font-size:11px; color:var(--ink-dim); white-space:nowrap;">補足（任意）</label>
-          <input type="text" id="card-eff-note" placeholder="例：次に出す味方に付与済み" style="flex:1;">
-        </div>
         <div class="judge-admin-row" style="margin:0 18px 14px; gap:10px;">
           <label style="margin:0; font-size:11px; color:var(--ink-dim); white-space:nowrap;">継続ターン数</label>
           <input type="text" id="card-eff-duration" placeholder="空欄=永続、数字を入力" style="flex:1;">
@@ -1250,16 +1246,15 @@
     confirmBtn.addEventListener('click', async () => {
       const name = pendingName.trim();
       if(!name) return;
-      const note = overlay.querySelector('#card-eff-note').value.trim();
       const durationRaw = overlay.querySelector('#card-eff-duration').value.trim();
       let remainingTurns = null;
       if(durationRaw !== '' && durationRaw !== '永続'){
         const n = parseInt(durationRaw, 10);
         if(Number.isFinite(n) && n > 0){ remainingTurns = n; }
       }
-      await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), { name, note: note || null, remainingTurns, addedBy: myName, ts: Date.now() });
+      await push(ref(db, `rooms/${roomId}/battle/cardEffects/${slot}/${idx}`), { name, note: null, remainingTurns, addedBy: myName, ts: Date.now() });
       const durationNote = remainingTurns == null ? '永続' : `あと${remainingTurns}ターンで消滅`;
-      await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}${note?'（'+note+'）':''}」を付与した（${durationNote}）。`, ts: Date.now() });
+      await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `${memberName(slot)}の数字${card.number}「${card.name||'無題'}」に「${name}」を付与した（${durationNote}）。`, ts: Date.now() });
       close();
     });
 
