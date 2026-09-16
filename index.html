@@ -1110,12 +1110,14 @@
       cardEl.querySelectorAll('.effect-chip').forEach(chip => {
         const effName = chip.dataset.effectName;
         const isActor = slot === currentActor;
+        const effObj = effectByName(effName);
+        const isNegative = effObj && effObj.pt < 0;
         const alreadyUsed = isActor && !!activations[effName];
         const isTeleportOnCooldown = isActor && effName === 'テレポート' && pick && !!myTeleportLockMap[pick.cardIndex];
-        const clickable = myTurn && isActor && !alreadyUsed && !isTeleportOnCooldown;
+        const clickable = myTurn && isActor && !alreadyUsed && !isTeleportOnCooldown && !isNegative;
         chip.classList.toggle('activatable', clickable);
         chip.classList.toggle('activated-used', isActor && (alreadyUsed || isTeleportOnCooldown));
-        chip.title = alreadyUsed ? 'この番、発動済みです' : (isTeleportOnCooldown ? 'クールダウン中で発動できません' : (clickable ? 'クリックで発動します（1回のみ）' : ''));
+        chip.title = isNegative ? 'デメリット効果は常に適用されるため、発動操作の対象外です' : (alreadyUsed ? 'この番、発動済みです' : (isTeleportOnCooldown ? 'クールダウン中で発動できません' : (clickable ? 'クリックで発動します（1回のみ）' : '')));
         if(clickable){
           chip.addEventListener('click', () => activateSkill(currentActor, effName));
         }
@@ -1127,6 +1129,8 @@
     if(myRole !== slot) return;
     const activations = (latestBattle.skillActivations && latestBattle.skillActivations[slot]) || {};
     if(activations[effName]) return;
+    const effObj = effectByName(effName);
+    if(effObj && effObj.pt < 0) return; // デメリット効果は発動操作の対象外
 
     if(effName === 'テレポート'){
       teleportChoicePending = true;
@@ -1545,19 +1549,19 @@
     const targetIdx = parseInt(document.getElementById('teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
     const targetCard = myDeck.cards[targetIdx];
+    teleportChoicePending = false; // Firebase書き込み前に戻す（書き込み中の再描画で判断画面が再表示されるのを防ぐ）
     // 場に来るのは呼び出された側のカードそのもの。
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: originIdx, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
-    teleportChoicePending = false;
   });
 
   document.getElementById('btn-teleport-skip').addEventListener('click', async () => {
     const pick = latestBattle.picks[myRole];
     if(!pick || !pick.locked) return;
+    teleportChoicePending = false; // Firebase書き込み前に戻す
     await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】を発動しなかった。`, ts: Date.now() });
-    teleportChoicePending = false;
   });
 
   document.getElementById('btn-skill-activation-done').addEventListener('click', async () => {
