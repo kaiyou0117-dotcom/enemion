@@ -631,23 +631,11 @@
       document.getElementById('solo-dice-note').textContent = `直近の用途: ${lastRoll.purpose}（1d${lastRoll.sides||4}）`;
     }
 
-    // --- テレポート発動判断（オープン後、相手のカードを見た上で決める） ---
-    if(picks.me.teleportDecided === false){
-      document.getElementById('solo-initiative-panel').classList.add('hidden');
-      document.getElementById('solo-judge-panel').classList.add('hidden');
-      document.getElementById('solo-teleport-decide-panel').classList.remove('hidden');
-      const originCard = myDeck[picks.me.cardIndex];
-      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
-      const sel = document.getElementById('solo-teleport-target-select');
-      sel.innerHTML = myDeck.map((c,i) => i===picks.me.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
-      return;
-    }
-    document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
-
-    // --- イニシアチブ ---
+    // --- イニシアチブ（テレポート発動判断より先に確定する） ---
     resolveInitiativeIfNeeded();
 
     if(!firstSlot){
+      document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
       if(initiativePending === 'me'){
         document.getElementById('solo-initiative-panel').classList.remove('hidden');
         document.getElementById('solo-judge-panel').classList.add('hidden');
@@ -664,6 +652,19 @@
       }
       return;
     }
+
+    // --- テレポート発動判断（イニシアチブ確定後、先後を踏まえた上で決める） ---
+    if(picks.me.teleportDecided === false){
+      document.getElementById('solo-initiative-panel').classList.add('hidden');
+      document.getElementById('solo-judge-panel').classList.add('hidden');
+      document.getElementById('solo-teleport-decide-panel').classList.remove('hidden');
+      const originCard = myDeck[picks.me.cardIndex];
+      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
+      const sel = document.getElementById('solo-teleport-target-select');
+      sel.innerHTML = myDeck.map((c,i) => i===picks.me.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      return;
+    }
+    document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
 
     document.getElementById('solo-initiative-panel').classList.add('hidden');
     document.getElementById('solo-judge-panel').classList.remove('hidden');

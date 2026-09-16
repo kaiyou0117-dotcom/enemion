@@ -1007,33 +1007,12 @@
       return;
     }
 
-    // --- テレポート発動判断（オープン後、相手のカードを見た上で決める） ---
-    const p1NeedsDecision = latestBattle.picks.player1.teleportDecided === false;
-    const p2NeedsDecision = latestBattle.picks.player2.teleportDecided === false;
-    const anyTeleportPending = p1NeedsDecision || p2NeedsDecision;
-    if(anyTeleportPending){
-      document.getElementById('initiative-panel').classList.add('hidden');
-      document.getElementById('judge-panel-wrap').classList.add('hidden');
-      const myNeedsDecision = (myRole === 'player1' && p1NeedsDecision) || (myRole === 'player2' && p2NeedsDecision);
-      document.getElementById('teleport-decide-panel').classList.toggle('hidden', !myNeedsDecision);
-      document.getElementById('teleport-wait-note').classList.toggle('hidden', myNeedsDecision);
-      if(myNeedsDecision){
-        const myDeck = latestDecks[myRole];
-        const pick = latestBattle.picks[myRole];
-        const originCard = myDeck.cards[pick.cardIndex];
-        document.getElementById('teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
-        const sel = document.getElementById('teleport-target-select');
-        sel.innerHTML = myDeck.cards.map((c,i) => i===pick.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
-      }
-      return;
-    }
-    document.getElementById('teleport-decide-panel').classList.add('hidden');
-    document.getElementById('teleport-wait-note').classList.add('hidden');
-
-    // --- イニシアチブフェーズ：先後決定 ---
+    // --- イニシアチブフェーズ：先後決定（テレポート発動判断より先に確定する） ---
     resolveInitiativeIfNeeded();
 
     if(!latestBattle.firstSlot){
+      document.getElementById('teleport-decide-panel').classList.add('hidden');
+      document.getElementById('teleport-wait-note').classList.add('hidden');
       const pending = latestBattle.initiativePending;
       if(pending){
         document.getElementById('initiative-panel').classList.remove('hidden');
@@ -1060,6 +1039,29 @@
       }
       return;
     }
+
+    // --- テレポート発動判断（イニシアチブ確定後、先後を踏まえた上で決める） ---
+    const p1NeedsDecision = latestBattle.picks.player1.teleportDecided === false;
+    const p2NeedsDecision = latestBattle.picks.player2.teleportDecided === false;
+    const anyTeleportPending = p1NeedsDecision || p2NeedsDecision;
+    if(anyTeleportPending){
+      document.getElementById('initiative-panel').classList.add('hidden');
+      document.getElementById('judge-panel-wrap').classList.add('hidden');
+      const myNeedsDecision = (myRole === 'player1' && p1NeedsDecision) || (myRole === 'player2' && p2NeedsDecision);
+      document.getElementById('teleport-decide-panel').classList.toggle('hidden', !myNeedsDecision);
+      document.getElementById('teleport-wait-note').classList.toggle('hidden', myNeedsDecision);
+      if(myNeedsDecision){
+        const myDeck = latestDecks[myRole];
+        const pick = latestBattle.picks[myRole];
+        const originCard = myDeck.cards[pick.cardIndex];
+        document.getElementById('teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
+        const sel = document.getElementById('teleport-target-select');
+        sel.innerHTML = myDeck.cards.map((c,i) => i===pick.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      }
+      return;
+    }
+    document.getElementById('teleport-decide-panel').classList.add('hidden');
+    document.getElementById('teleport-wait-note').classList.add('hidden');
 
     // --- バトルフェーズ：裁定 ---
     document.getElementById('initiative-panel').classList.add('hidden');
