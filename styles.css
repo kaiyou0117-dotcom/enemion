@@ -477,6 +477,10 @@
     border-color: var(--gold);
     background: rgba(201,162,39,0.12);
   }
+  .effect-chip.activated-used{
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
   .row2{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
   .phase-actions{ display:flex; gap: 10px; align-items:center; margin-bottom: 24px; flex-wrap: wrap; }

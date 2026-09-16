@@ -211,7 +211,16 @@
                   <div class="reveal-board" id="field-board"></div>
                 </div>
 
-                <!-- テレポート発動判断（相手のカードを見た上で決める） -->
+                <!-- 技能発動フェーズ：先手→後手の順で、自分の技能を1つずつ発動できる -->
+                <div id="skill-activation-panel" class="hidden">
+                  <h3>技能発動</h3>
+                  <p class="ready-note" id="skill-activation-note"></p>
+                  <div id="skill-activation-done-wrap" class="hidden phase-actions">
+                    <button class="ghost-btn" id="btn-skill-activation-done">発動完了（これ以上発動しない）</button>
+                  </div>
+                </div>
+
+                <!-- テレポート発動判断（技能発動フェーズ内、テレポートをクリックした時だけ出る） -->
                 <div id="teleport-decide-panel" class="hidden" style="background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:14px; margin-bottom:20px;">
                   <h3 style="font-family:var(--font-display); font-size:15px; color:var(--gold); margin:0 0 8px;">【テレポート】発動判断</h3>
                   <p class="ready-note" id="teleport-decide-note" style="margin-bottom:8px;"></p>
@@ -221,7 +230,6 @@
                     <button class="ghost-btn" id="btn-teleport-skip">発動しない</button>
                   </div>
                 </div>
-                <p class="ready-note hidden" id="teleport-wait-note">相手が【テレポート】を発動するか検討しています…</p>
 
                 <!-- バトル：この番の裁定 -->
                 <div class="judge-panel hidden" id="judge-panel-wrap">
@@ -851,6 +859,8 @@
       roundProposals: { player1: null, player2: null },
       fourCountUsed: { player1: false, player2: false },
       cardEffects: { player1: {}, player2: {} },
+      skillActivations: { player1: {}, player2: {} },
+      skillDone: { player1: false, player2: false },
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -992,21 +1002,6 @@
       (p1Reveal ? revealCardHtml('player1', getBattleCard('player1')) : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`) +
       (p2Reveal ? revealCardHtml('player2', getBattleCard('player2')) : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`);
 
-    // 自分のカードの効果は、クリックで「発動」としてログに残せる（自分のターン＝自分のカードが場にある時のみ）
-    if(myRole === 'player1' || myRole === 'player2'){
-      const myCardEl = document.querySelector(`#field-board .reveal-card[data-card-slot="${myRole}"]`);
-      if(myCardEl){
-        myCardEl.querySelectorAll('.effect-chip').forEach(chip => {
-          chip.classList.add('activatable');
-          chip.title = 'クリックで発動としてログに記録します';
-          chip.addEventListener('click', () => {
-            const effName = chip.dataset.effectName;
-            push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${effName}」を発動した。`, ts: Date.now() });
-          });
-        });
-      }
-    }
-
     const face = document.getElementById('dice-face');
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
     const purposeNote = document.getElementById('dice-note');
@@ -1017,17 +1012,17 @@
     if(!bothLocked){
       document.getElementById('initiative-panel').classList.add('hidden');
       document.getElementById('judge-panel-wrap').classList.add('hidden');
+      document.getElementById('skill-activation-panel').classList.add('hidden');
       document.getElementById('teleport-decide-panel').classList.add('hidden');
-      document.getElementById('teleport-wait-note').classList.add('hidden');
       return;
     }
 
-    // --- イニシアチブフェーズ：先後決定（テレポート発動判断より先に確定する） ---
+    // --- イニシアチブフェーズ：先後決定（技能発動より先に確定する） ---
     resolveInitiativeIfNeeded();
 
     if(!latestBattle.firstSlot){
+      document.getElementById('skill-activation-panel').classList.add('hidden');
       document.getElementById('teleport-decide-panel').classList.add('hidden');
-      document.getElementById('teleport-wait-note').classList.add('hidden');
       const pending = latestBattle.initiativePending;
       if(pending){
         document.getElementById('initiative-panel').classList.remove('hidden');
@@ -1054,35 +1049,93 @@
       }
       return;
     }
+    document.getElementById('initiative-panel').classList.add('hidden');
 
-    // --- テレポート発動判断（イニシアチブ確定後、先後を踏まえた上で決める） ---
-    const p1NeedsDecision = latestBattle.picks.player1.teleportDecided === false;
-    const p2NeedsDecision = latestBattle.picks.player2.teleportDecided === false;
-    const anyTeleportPending = p1NeedsDecision || p2NeedsDecision;
-    if(anyTeleportPending){
-      document.getElementById('initiative-panel').classList.add('hidden');
+    // --- 技能発動フェーズ：先手→後手の順で、自分のカードの技能を1つずつ発動できる（テレポートもこの中の1つ） ---
+    const skillActivations = latestBattle.skillActivations || { player1:{}, player2:{} };
+    const skillDone = latestBattle.skillDone || { player1:false, player2:false };
+    const secondSlotForSkill = oppSlot(latestBattle.firstSlot);
+    let currentActor = null;
+    if(!skillDone[latestBattle.firstSlot]) currentActor = latestBattle.firstSlot;
+    else if(!skillDone[secondSlotForSkill]) currentActor = secondSlotForSkill;
+
+    if(currentActor){
       document.getElementById('judge-panel-wrap').classList.add('hidden');
-      const myNeedsDecision = (myRole === 'player1' && p1NeedsDecision) || (myRole === 'player2' && p2NeedsDecision);
-      document.getElementById('teleport-decide-panel').classList.toggle('hidden', !myNeedsDecision);
-      document.getElementById('teleport-wait-note').classList.toggle('hidden', myNeedsDecision);
-      if(myNeedsDecision){
-        const myDeck = latestDecks[myRole];
-        const pick = latestBattle.picks[myRole];
-        const originCard = myDeck.cards[pick.cardIndex];
-        document.getElementById('teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
-        const sel = document.getElementById('teleport-target-select');
-        sel.innerHTML = myDeck.cards.map((c,i) => i===pick.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
-      }
+      renderSkillActivationPhase(currentActor, skillActivations);
       return;
     }
+    document.getElementById('skill-activation-panel').classList.add('hidden');
     document.getElementById('teleport-decide-panel').classList.add('hidden');
-    document.getElementById('teleport-wait-note').classList.add('hidden');
 
     // --- バトルフェーズ：裁定 ---
-    document.getElementById('initiative-panel').classList.add('hidden');
     document.getElementById('judge-panel-wrap').classList.remove('hidden');
     renderJudgePanel();
     resolveRoundProposalsIfNeeded();
+  }
+
+  let teleportChoicePending = false; // ローカルのみ。自分がテレポートの判断画面を開いているかどうか
+
+  function renderSkillActivationPhase(currentActor, skillActivations){
+    const isFirst = currentActor === latestBattle.firstSlot;
+    const label = isFirst ? '先手' : '後手';
+    const myTurn = myRole === currentActor;
+    const activations = skillActivations[currentActor] || {};
+
+    if(myTurn && teleportChoicePending){
+      document.getElementById('skill-activation-panel').classList.add('hidden');
+      document.getElementById('teleport-decide-panel').classList.remove('hidden');
+      const myDeck = latestDecks[myRole];
+      const pick = latestBattle.picks[myRole];
+      const originCard = myDeck.cards[pick.cardIndex];
+      document.getElementById('teleport-decide-note').textContent = `「${originCard.name||'無題'}」の【テレポート】を発動しますか？`;
+      const sel = document.getElementById('teleport-target-select');
+      sel.innerHTML = myDeck.cards.map((c,i) => i===pick.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
+      return;
+    }
+    document.getElementById('teleport-decide-panel').classList.add('hidden');
+    document.getElementById('skill-activation-panel').classList.remove('hidden');
+
+    const note = document.getElementById('skill-activation-note');
+    note.textContent = myTurn
+      ? `あなた（${label}）の技能発動フェーズです。自分のカードの技能をクリックすると発動できます（各技能は1回まで）。発動し終えたら「発動完了」を押してください。`
+      : `${memberName(currentActor)}（${label}）が技能を発動しています…`;
+    document.getElementById('skill-activation-done-wrap').classList.toggle('hidden', !myTurn);
+
+    const pick = latestBattle.picks[currentActor];
+    const myTeleportLockMap = (latestBattle.teleportLock && latestBattle.teleportLock[currentActor]) || {};
+
+    ['player1','player2'].forEach(slot => {
+      const cardEl = document.querySelector(`#field-board .reveal-card[data-card-slot="${slot}"]`);
+      if(!cardEl) return;
+      cardEl.querySelectorAll('.effect-chip').forEach(chip => {
+        const effName = chip.dataset.effectName;
+        const isActor = slot === currentActor;
+        const alreadyUsed = isActor && !!activations[effName];
+        const isTeleportOnCooldown = isActor && effName === 'テレポート' && pick && !!myTeleportLockMap[pick.cardIndex];
+        const clickable = myTurn && isActor && !alreadyUsed && !isTeleportOnCooldown;
+        chip.classList.toggle('activatable', clickable);
+        chip.classList.toggle('activated-used', isActor && (alreadyUsed || isTeleportOnCooldown));
+        chip.title = alreadyUsed ? 'この番、発動済みです' : (isTeleportOnCooldown ? 'クールダウン中で発動できません' : (clickable ? 'クリックで発動します（1回のみ）' : ''));
+        if(clickable){
+          chip.addEventListener('click', () => activateSkill(currentActor, effName));
+        }
+      });
+    });
+  }
+
+  async function activateSkill(slot, effName){
+    if(myRole !== slot) return;
+    const activations = (latestBattle.skillActivations && latestBattle.skillActivations[slot]) || {};
+    if(activations[effName]) return;
+
+    if(effName === 'テレポート'){
+      teleportChoicePending = true;
+      renderBattlePhase();
+      return;
+    }
+
+    await update(ref(db, `rooms/${roomId}/battle/skillActivations/${slot}`), { [effName]: true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${effName}」を発動した。`, ts: Date.now() });
   }
 
   // ジャッジがカードに付与した「数字補正」効果の合計値を返す
@@ -1406,7 +1459,7 @@
     updates['decks/player1'] = decks.player2 || null;
     updates['decks/player2'] = decks.player1 || null;
 
-    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed','cardEffects'];
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed','cardEffects','skillActivations','skillDone'];
     perSlotFields.forEach(key => {
       if(battle[key]){
         updates[`battle/${key}`] = {
@@ -1474,8 +1527,7 @@
     const cost = useFourCount ? Math.max(0, baseNumber - pointDiff) : baseNumber;
 
     if(cost > myEE || myLocked[myHandSelection]) return;
-    const needsTeleportDecision = (card.effectNames||[]).includes('テレポート') && !((latestBattle.teleportLock && latestBattle.teleportLock[myRole] && latestBattle.teleportLock[myRole][myHandSelection]));
-    const pickData = { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsTeleportDecision, locked: true };
+    const pickData = { cardIndex: myHandSelection, teleportOriginIdx: null, locked: true };
     if(useFourCount){ pickData.fourCountReduction = pointDiff; }
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), pickData);
     if(useFourCount){ await update(ref(db, `rooms/${roomId}/battle/fourCountUsed`), { [myRole]: true }); }
@@ -1486,23 +1538,36 @@
 
   document.getElementById('btn-teleport-activate').addEventListener('click', async () => {
     const pick = latestBattle.picks[myRole];
-    if(!pick || !pick.locked || pick.teleportDecided) return;
+    if(!pick || !pick.locked) return;
     const myDeck = latestDecks[myRole];
     const originIdx = pick.cardIndex;
     const originCard = myDeck.cards[originIdx];
     const targetIdx = parseInt(document.getElementById('teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
     const targetCard = myDeck.cards[targetIdx];
-    // 相手のカードを見た上で発動を判断する。場に来るのは呼び出された側のカードそのもの。
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: originIdx, teleportDecided: true, locked: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `相手の場を見て「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
+    // 場に来るのは呼び出された側のカードそのもの。
+    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: originIdx, locked: true });
+    await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
+    teleportChoicePending = false;
   });
 
   document.getElementById('btn-teleport-skip').addEventListener('click', async () => {
     const pick = latestBattle.picks[myRole];
-    if(!pick || !pick.locked || pick.teleportDecided) return;
-    await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { teleportDecided: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】を発動せず、そのままバトルに進んだ。`, ts: Date.now() });
+    if(!pick || !pick.locked) return;
+    await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】を発動しなかった。`, ts: Date.now() });
+    teleportChoicePending = false;
+  });
+
+  document.getElementById('btn-skill-activation-done').addEventListener('click', async () => {
+    if(!latestBattle || !latestBattle.firstSlot) return;
+    const skillDone = latestBattle.skillDone || { player1:false, player2:false };
+    const secondSlotForSkill = oppSlot(latestBattle.firstSlot);
+    const currentActor = !skillDone[latestBattle.firstSlot] ? latestBattle.firstSlot : (!skillDone[secondSlotForSkill] ? secondSlotForSkill : null);
+    if(currentActor !== myRole) return;
+    await update(ref(db, `rooms/${roomId}/battle/skillDone`), { [myRole]: true });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `技能の発動を終えた。`, ts: Date.now() });
   });
 
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
@@ -1708,6 +1773,8 @@
     updates['battle/eeBonusNext'] = { player1: 0, player2: 0 };
     updates['battle/teleportLock'] = newTeleportLock;
     updates['battle/roundProposals'] = { player1: null, player2: null };
+    updates['battle/skillActivations'] = { player1: {}, player2: {} };
+    updates['battle/skillDone'] = { player1: false, player2: false };
     updates['battle/undoSnapshot'] = snapshotBeforeThisRound;
 
     if(finished){
@@ -1717,6 +1784,7 @@
 
     await update(ref(db, `rooms/${roomId}`), updates);
     judgePanelTurnMark = null;
+    teleportChoicePending = false;
 
     const winnerText = winner === 'draw' ? '引き分け' : `${memberName(winner)}の勝ち`;
     let logText = `エンド：この番の結果は${winnerText}（+${award}win）。次ターン獲得EE　${memberName('player1')}:${gainP1}／${memberName('player2')}:${gainP2}。`;
@@ -1823,6 +1891,8 @@
       roundProposals:{player1:null, player2:null},
       fourCountUsed:{player1:false, player2:false},
       cardEffects:{player1:{}, player2:{}},
+      skillActivations:{player1:{}, player2:{}},
+      skillDone:{player1:false, player2:false},
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
