@@ -469,6 +469,14 @@
   .effect-chip .ec-pt{ font-family: var(--font-mono); font-size: 11px; color: var(--gold); }
   .effect-chip .ec-remove{ background:none; border:none; color: var(--red-glow); cursor:pointer; font-size:12px; }
   .effect-chip .ec-text{ font-size: 11px; color: var(--ink-dim); margin-top: 4px; line-height:1.5; }
+  .effect-chip.activatable{
+    cursor: pointer;
+    transition: border-color .12s ease, background .12s ease;
+  }
+  .effect-chip.activatable:hover{
+    border-color: var(--gold);
+    background: rgba(201,162,39,0.12);
+  }
   .row2{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
   .phase-actions{ display:flex; gap: 10px; align-items:center; margin-bottom: 24px; flex-wrap: wrap; }

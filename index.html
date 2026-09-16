@@ -992,6 +992,21 @@
       (p1Reveal ? revealCardHtml('player1', getBattleCard('player1')) : `<div class="field-slot-empty">${escapeHtml(memberName('player1'))}：検討中…</div>`) +
       (p2Reveal ? revealCardHtml('player2', getBattleCard('player2')) : `<div class="field-slot-empty">${escapeHtml(memberName('player2'))}：検討中…</div>`);
 
+    // 自分のカードの効果は、クリックで「発動」としてログに残せる（自分のターン＝自分のカードが場にある時のみ）
+    if(myRole === 'player1' || myRole === 'player2'){
+      const myCardEl = document.querySelector(`#field-board .reveal-card[data-card-slot="${myRole}"]`);
+      if(myCardEl){
+        myCardEl.querySelectorAll('.effect-chip').forEach(chip => {
+          chip.classList.add('activatable');
+          chip.title = 'クリックで発動としてログに記録します';
+          chip.addEventListener('click', () => {
+            const effName = chip.dataset.effectName;
+            push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${effName}」を発動した。`, ts: Date.now() });
+          });
+        });
+      }
+    }
+
     const face = document.getElementById('dice-face');
     face.textContent = (latestBattle.lastRoll ? latestBattle.lastRoll.value : '–');
     const purposeNote = document.getElementById('dice-note');
@@ -1096,7 +1111,8 @@
   // 両者ロック（オープン）の瞬間にEEをまとめて消費する。
   // セレクト段階でEEが減ると、公開前にどのカードを選んだか分かってしまうため、必ずここで消費する。
   function deductEeOnOpenIfNeeded(){
-    if(myRole !== 'player1') return; // 競合を避けるため実行はplayer1側のみ
+    // イニシアチブ確定処理と同様、特定の一人だけに頼ると止まってしまうため複数ロールで実行可能にする
+    if(!(myRole === 'player1' || myRole === 'player2' || myRole === 'judge')) return;
     if(!latestBattle || !latestBattle.picks) return;
     const p1Pick = latestBattle.picks.player1;
     const p2Pick = latestBattle.picks.player2;
@@ -1110,11 +1126,13 @@
     update(ref(db, `rooms/${roomId}/battle/ee`), {
       player1: currentEe.player1 - p1Cost,
       player2: currentEe.player2 - p2Cost
-    });
+    }).catch(() => { if(eeDeductedForTurn === latestBattle.turn) eeDeductedForTurn = null; });
   }
 
   function resolveInitiativeIfNeeded(){
-    if(myRole !== 'player1') return;
+    // 特定の一人だけに実行を頼ると、その人がその場にいない時に永遠に決まらなくなるため、
+    // プレイヤー1・プレイヤー2・ジャッジのいずれでも実行できるようにする（計算内容は決定的なので重複実行しても問題ない）
+    if(!(myRole === 'player1' || myRole === 'player2' || myRole === 'judge')) return;
     if(latestBattle.firstSlot) return;
     if(latestBattle.initiativePending) return;
     if(initiativeResolvedForTurn === latestBattle.turn) return;
@@ -1139,10 +1157,12 @@
     }
 
     if(chooser){
-      update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser });
+      update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser })
+        .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
     } else {
       const first = (Math.floor(Math.random()*2) === 0) ? 'player1' : 'player2';
-      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first });
+      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first })
+        .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
     }
   }
 
@@ -1611,7 +1631,7 @@
       const e = effectByName(n);
       if(!e) return '';
       const catTag = e.category==='ability' ? '〈異能〉' : e.category==='skill' ? '〈技能〉' : '';
-      return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
+      return `<div class="effect-chip" data-effect-name="${escapeHtml(e.name)}"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
     const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】「${escapeHtml(card._teleportOrigin.name)||'無題'}」から呼び出された</div>` : '';
@@ -1624,7 +1644,7 @@
       return `<span class="card-effect-badge">${escapeHtml(eff.name)}${eff.note?`（${escapeHtml(eff.note)}）`:''}［${durationNote}${deltaNote}］</span>`;
     }).join('');
     return `
-      <div class="reveal-card">
+      <div class="reveal-card" data-card-slot="${slot}">
         <div class="rc-side">${escapeHtml(memberName(slot))}</div>
         ${imageHtml}
         <div class="rc-name">${escapeHtml(card.name)}</div>
