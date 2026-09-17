@@ -173,7 +173,16 @@
               <div class="reveal-board" id="solo-field-board"></div>
             </div>
 
-            <!-- テレポート発動判断（相手のカードを見た上で決める） -->
+            <!-- 技能発動：自分のカードの技能をクリックして発動できる（各技能1回まで、マイナス効果は対象外） -->
+            <div id="solo-skill-activation-panel" class="hidden">
+              <h3>技能発動</h3>
+              <p class="ready-note">自分のカードの技能をクリックすると発動できます（各技能は1回まで）。発動し終えたら「次へ進む」を押してください。</p>
+              <div class="phase-actions">
+                <button class="ghost-btn" id="btn-solo-skill-done">次へ進む（これ以上発動しない）</button>
+              </div>
+            </div>
+
+            <!-- テレポート発動判断（技能発動フェーズ内、テレポートをクリックした時だけ出る） -->
             <div id="solo-teleport-decide-panel" class="hidden" style="background:var(--panel); border:1px solid var(--gold); border-radius:4px; padding:14px; margin-bottom:20px;">
               <h3 style="font-family:var(--font-display); font-size:15px; color:var(--gold); margin:0 0 8px;">【テレポート】発動判断</h3>
               <p class="ready-note" id="solo-teleport-decide-note" style="margin-bottom:8px;"></p>
@@ -182,6 +191,12 @@
                 <button class="ghost-btn" id="btn-solo-teleport-activate">発動する（選んだカードを呼び出す）</button>
                 <button class="ghost-btn" id="btn-solo-teleport-skip">発動しない</button>
               </div>
+            </div>
+
+            <!-- 行動履歴 -->
+            <div class="log-panel">
+              <h3>行動履歴</h3>
+              <div class="log-list" id="solo-action-log"></div>
             </div>
 
             <!-- バトル：この番の裁定 -->
@@ -257,6 +272,10 @@
   let picks = { me: null, opp: null }; // {cardIndex, teleportOriginIdx}
   let firstSlot = null; // 'me'|'opp'
   let initiativePending = null; // 'me'|'opp'|null
+  let mySkillActivations = {}; // { 効果名: true }
+  let mySkillDone = false;
+  let teleportChoicePending = false;
+  let soloActionLog = []; // [{text, ts}]
   let judgePanelTurnMark = null;
   let lastRoll = null;
   let myTeleportLock = {}; // cardIndex -> true（次に出す時1回テレポート不可）
@@ -545,8 +564,13 @@
     oppTeleportLock = {};
     soloStatusEffects = [];
     soloCardEffects = { me: {}, opp: {} };
+    mySkillActivations = {};
+    mySkillDone = false;
+    teleportChoicePending = false;
+    soloActionLog = [];
     renderSoloStatusList();
     renderSoloCardEffectPanel();
+    renderSoloActionLog();
 
     document.getElementById('solo-deck-label').textContent = `使用デッキ: ${deck.label || '無題のデッキ'}`;
     opponentSetupScreen.classList.add('hidden');
@@ -631,11 +655,12 @@
       document.getElementById('solo-dice-note').textContent = `直近の用途: ${lastRoll.purpose}（1d${lastRoll.sides||4}）`;
     }
 
-    // --- イニシアチブ（テレポート発動判断より先に確定する） ---
+    // --- イニシアチブ ---
     resolveInitiativeIfNeeded();
 
     if(!firstSlot){
       document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
+      document.getElementById('solo-skill-activation-panel').classList.add('hidden');
       if(initiativePending === 'me'){
         document.getElementById('solo-initiative-panel').classList.remove('hidden');
         document.getElementById('solo-judge-panel').classList.add('hidden');
@@ -652,24 +677,84 @@
       }
       return;
     }
+    document.getElementById('solo-initiative-panel').classList.add('hidden');
 
-    // --- テレポート発動判断（イニシアチブ確定後、先後を踏まえた上で決める） ---
-    if(picks.me.teleportDecided === false){
-      document.getElementById('solo-initiative-panel').classList.add('hidden');
-      document.getElementById('solo-judge-panel').classList.add('hidden');
+    // --- 技能発動：自分のカードの技能をクリックして発動できる（テレポートもこの中の1つ。先手/後手の待ち合わせはソロでは省略） ---
+    if(teleportChoicePending){
+      document.getElementById('solo-skill-activation-panel').classList.add('hidden');
       document.getElementById('solo-teleport-decide-panel').classList.remove('hidden');
       const originCard = myDeck[picks.me.cardIndex];
-      document.getElementById('solo-teleport-decide-note').textContent = `あなたの「${originCard.name||'無題'}」は【テレポート】を持っています。デッキの別のカードを呼び出しますか？`;
+      document.getElementById('solo-teleport-decide-note').textContent = `「${originCard.name||'無題'}」の【テレポート】を発動しますか？`;
       const sel = document.getElementById('solo-teleport-target-select');
       sel.innerHTML = myDeck.map((c,i) => i===picks.me.cardIndex ? '' : `<option value="${i}">数字${c.number}のカード「${escapeHtml(c.name)||'無題'}」（${TYPE_LABEL[c.type]}）</option>`).join('');
       return;
     }
     document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
 
-    document.getElementById('solo-initiative-panel').classList.add('hidden');
+    if(!mySkillDone){
+      document.getElementById('solo-skill-activation-panel').classList.remove('hidden');
+      document.getElementById('solo-judge-panel').classList.add('hidden');
+      const myCardEl = document.querySelector(`#solo-field-board .reveal-card[data-card-slot="me"]`);
+      if(myCardEl){
+        myCardEl.querySelectorAll('.effect-chip').forEach(chip => {
+          const effName = chip.dataset.effectName;
+          const effObj = effectByName(effName);
+          const isNegative = effObj && effObj.pt < 0;
+          const alreadyUsed = !!mySkillActivations[effName];
+          const isTeleportOnCooldown = effName === 'テレポート' && !!myTeleportLock[picks.me.cardIndex];
+          const clickable = !alreadyUsed && !isTeleportOnCooldown && !isNegative;
+          chip.classList.toggle('activatable', clickable);
+          chip.classList.toggle('activated-used', alreadyUsed || isTeleportOnCooldown);
+          chip.title = isNegative ? 'デメリット効果は常に適用されるため、発動操作の対象外です' : (alreadyUsed ? 'この番、発動済みです' : (isTeleportOnCooldown ? 'クールダウン中で発動できません' : (clickable ? 'クリックで発動します（1回のみ）' : '')));
+          if(clickable){
+            chip.addEventListener('click', () => activateMySkill(effName));
+          }
+        });
+      }
+      const oppCardEl = document.querySelector(`#solo-field-board .reveal-card[data-card-slot="opp"]`);
+      if(oppCardEl){
+        oppCardEl.querySelectorAll('.effect-chip').forEach(chip => chip.classList.remove('activatable'));
+      }
+      return;
+    }
+    document.getElementById('solo-skill-activation-panel').classList.add('hidden');
+
     document.getElementById('solo-judge-panel').classList.remove('hidden');
     renderSoloJudgePanel();
   }
+
+  function renderSoloActionLog(){
+    const list = document.getElementById('solo-action-log');
+    if(!list) return;
+    if(soloActionLog.length === 0){
+      list.innerHTML = '<div class="status-empty">まだ記録はありません。</div>';
+      return;
+    }
+    list.innerHTML = soloActionLog.map(item => `<div class="log-item"><span class="log-meta">あなた</span>${escapeHtml(item.text)}</div>`).join('');
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function logSoloAction(text){
+    soloActionLog.push({ text, ts: Date.now() });
+    renderSoloActionLog();
+  }
+
+  function activateMySkill(effName){
+    if(mySkillActivations[effName]) return;
+    const effObj = effectByName(effName);
+    if(effObj && effObj.pt < 0) return;
+
+    if(effName === 'テレポート'){
+      teleportChoicePending = true;
+      renderSoloBattle();
+      return;
+    }
+
+    mySkillActivations[effName] = true;
+    logSoloAction(`「${effName}」を発動した。`);
+    renderSoloBattle();
+  }
+
 
   function resolveInitiativeIfNeeded(){
     if(firstSlot || initiativePending) return;
@@ -704,7 +789,7 @@
       const e = effectByName(n);
       if(!e) return '';
       const catTag = e.category==='ability' ? '〈異能〉' : e.category==='skill' ? '〈技能〉' : '';
-      return `<div class="effect-chip"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
+      return `<div class="effect-chip" data-effect-name="${escapeHtml(e.name)}"><div class="ec-head"><span class="ec-name">${escapeHtml(e.name)}${catTag}${e.ex?'（EX）':''}</span><span class="ec-pt">${e.pt}pt</span></div><div class="ec-text">${escapeHtml(e.text)}</div></div>`;
     }).join('');
     const imageHtml = card.image ? `<img src="${card.image}" alt="" style="width:100%; max-height:120px; object-fit:cover; border-radius:3px; margin-bottom:8px;">` : '';
     const teleportNote = card._teleported ? `<div class="rc-meta" style="color:var(--gold);">【テレポート】「${escapeHtml(card._teleportOrigin.name)||'無題'}」から呼び出された</div>` : '';
@@ -716,7 +801,7 @@
       return `<span class="card-effect-badge">${escapeHtml(eff.name)}［${durationNote}${deltaNote}］</span>`;
     }).join('');
     return `
-      <div class="reveal-card">
+      <div class="reveal-card" data-card-slot="${who||''}">
         <div class="rc-side">${escapeHtml(sideName)}</div>
         ${imageHtml}
         <div class="rc-name">${escapeHtml(card.name)}</div>
@@ -738,9 +823,9 @@
     if((oppCard.effectNames||[]).includes('テレポート') && !oppTeleportLock[oppIdx] && Math.random() < 0.5){
       const others = oppDeck.map((c,i)=>i).filter(i => i !== oppIdx);
       const targetIdx = randomChoice(others);
-      picks.opp = { cardIndex: targetIdx, teleportOriginIdx: oppIdx, teleportDecided: true };
+      picks.opp = { cardIndex: targetIdx, teleportOriginIdx: oppIdx };
     } else {
-      picks.opp = { cardIndex: oppIdx, teleportOriginIdx: null, teleportDecided: true };
+      picks.opp = { cardIndex: oppIdx, teleportOriginIdx: null };
     }
   }
 
@@ -750,8 +835,7 @@
     const cost = getEffectiveNumber('me', myHandSelection);
     if(cost > ee.me) return;
     ee.me -= cost;
-    const needsDecision = (card.effectNames||[]).includes('テレポート') && !myTeleportLock[myHandSelection];
-    picks.me = { cardIndex: myHandSelection, teleportOriginIdx: null, teleportDecided: !needsDecision };
+    picks.me = { cardIndex: myHandSelection, teleportOriginIdx: null };
     myHandSelection = null;
     botPlayTurn();
     renderSoloBattle();
@@ -759,19 +843,32 @@
 
   document.getElementById('btn-solo-teleport-activate').addEventListener('click', () => {
     const pick = picks.me;
-    if(!pick || pick.teleportDecided) return;
+    if(!pick) return;
     const originIdx = pick.cardIndex;
+    const originCard = myDeck[originIdx];
     const targetIdx = parseInt(document.getElementById('solo-teleport-target-select').value, 10);
     if(!Number.isInteger(targetIdx)) return;
-    // 相手のカードを見た上で発動を判断する。場に来るのは呼び出された側のカードそのもの。EEは元カードの分のみで済む。
-    picks.me = { cardIndex: targetIdx, teleportOriginIdx: originIdx, teleportDecided: true };
+    const targetCard = myDeck[targetIdx];
+    teleportChoicePending = false;
+    // 場に来るのは呼び出された側のカードそのもの。EEは元カードの分のみで済む。
+    picks.me = { cardIndex: targetIdx, teleportOriginIdx: originIdx };
+    mySkillActivations['テレポート'] = true;
+    logSoloAction(`「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`);
     renderSoloBattle();
   });
 
   document.getElementById('btn-solo-teleport-skip').addEventListener('click', () => {
     const pick = picks.me;
-    if(!pick || pick.teleportDecided) return;
-    picks.me = { ...pick, teleportDecided: true };
+    if(!pick) return;
+    teleportChoicePending = false;
+    mySkillActivations['テレポート'] = true;
+    logSoloAction('【テレポート】を発動しなかった。');
+    renderSoloBattle();
+  });
+
+  document.getElementById('btn-solo-skill-done').addEventListener('click', () => {
+    mySkillDone = true;
+    logSoloAction('技能の発動を終えた。');
     renderSoloBattle();
   });
 
@@ -879,6 +976,9 @@
     initiativePending = null;
     turn += 1;
     judgePanelTurnMark = null;
+    mySkillActivations = {};
+    mySkillDone = false;
+    teleportChoicePending = false;
     tickSoloStatusEffects();
     tickSoloCardEffects();
 
