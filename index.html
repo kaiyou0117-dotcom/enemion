@@ -881,6 +881,7 @@
       cardEffects: { player1: {}, player2: {} },
       skillActivations: { player1: {}, player2: {} },
       skillDone: { player1: false, player2: false },
+      diceOff: null,
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -1039,6 +1040,7 @@
 
     // --- イニシアチブフェーズ：先後決定（技能発動より先に確定する） ---
     resolveInitiativeIfNeeded();
+    maybeShowDiceOffModal();
 
     if(!latestBattle.firstSlot){
       document.getElementById('skill-activation-panel').classList.add('hidden');
@@ -1236,11 +1238,55 @@
     if(chooser){
       update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser })
         .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+    } else if(p1Card.type === p2Card.type && p1Card.number === p2Card.number){
+      // タイプ・数字が完全に同じ場合は、1d10のダイス勝負で先手を決める（同数なら振り直す）
+      let r1, r2;
+      do {
+        r1 = Math.floor(Math.random()*10) + 1;
+        r2 = Math.floor(Math.random()*10) + 1;
+      } while(r1 === r2);
+      const first = r1 > r2 ? 'player1' : 'player2';
+      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first, diceOff: { player1: r1, player2: r2 } })
+        .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
     } else {
       const first = (Math.floor(Math.random()*2) === 0) ? 'player1' : 'player2';
       update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first })
         .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
     }
+  }
+
+  let diceOffModalShownForTurn = null;
+  function maybeShowDiceOffModal(){
+    if(!latestBattle || !latestBattle.diceOff) return;
+    if(diceOffModalShownForTurn === latestBattle.turn) return;
+    diceOffModalShownForTurn = latestBattle.turn;
+    const { player1: r1, player2: r2 } = latestBattle.diceOff;
+    const winner = r1 > r2 ? 'player1' : 'player2';
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(420px,100%); text-align:center;">
+        <div class="picker-header"><span>先手・後手を1d10で決定</span><button type="button" class="picker-close" aria-label="閉じる">✕</button></div>
+        <div style="padding:24px 18px;">
+          <p class="ready-note" style="margin-bottom:16px;">両者のタイプ・数字が同じだったため、1d10のダイスで先手を決めます。</p>
+          <div style="display:flex; justify-content:center; gap:32px; margin-bottom:18px;">
+            <div>
+              <div class="ready-note" style="margin-bottom:6px;">${escapeHtml(memberName('player1'))}</div>
+              <div class="dice-face" style="margin:0 auto;">${r1}</div>
+            </div>
+            <div>
+              <div class="ready-note" style="margin-bottom:6px;">${escapeHtml(memberName('player2'))}</div>
+              <div class="dice-face" style="margin:0 auto;">${r2}</div>
+            </div>
+          </div>
+          <p style="font-family:var(--font-display); color:var(--gold); font-size:16px; margin:0;">先手：${escapeHtml(memberName(winner))}</p>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
   }
 
   function memberName(slot){
@@ -1483,7 +1529,7 @@
     updates['decks/player1'] = decks.player2 || null;
     updates['decks/player2'] = decks.player1 || null;
 
-    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed','cardEffects','skillActivations','skillDone'];
+    const perSlotFields = ['points','ee','eeBonusNext','specialMimic','mimicNeeded','picks','lockedCards','teleportLock','fourCountUsed','cardEffects','skillActivations','skillDone','diceOff'];
     perSlotFields.forEach(key => {
       if(battle[key]){
         updates[`battle/${key}`] = {
@@ -1799,6 +1845,7 @@
     updates['battle/roundProposals'] = { player1: null, player2: null };
     updates['battle/skillActivations'] = { player1: {}, player2: {} };
     updates['battle/skillDone'] = { player1: false, player2: false };
+    updates['battle/diceOff'] = null;
     updates['battle/undoSnapshot'] = snapshotBeforeThisRound;
 
     if(finished){
@@ -1917,6 +1964,7 @@
       cardEffects:{player1:{}, player2:{}},
       skillActivations:{player1:{}, player2:{}},
       skillDone:{player1:false, player2:false},
+      diceOff:null,
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
