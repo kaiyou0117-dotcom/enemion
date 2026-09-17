@@ -194,6 +194,16 @@
                   <div class="phase-actions" id="initiative-choice-buttons"></div>
                 </div>
 
+                <!-- ダイス勝負：タイプ・数字が同じ場合、各プレイヤー自身が振って先手を決める -->
+                <div id="dice-off-panel" class="hidden">
+                  <h3>ダイス勝負（先手決定）</h3>
+                  <p class="ready-note">タイプ・数字が同じため、1d10のダイス勝負で先手を決めます。同じ目が出た場合は振り直しになります。</p>
+                  <p class="ready-note" id="dice-off-status"></p>
+                  <div class="phase-actions">
+                    <button class="ghost-btn" id="btn-dice-off-roll">1d10を振る</button>
+                  </div>
+                </div>
+
                 <div class="dice-area">
                   <div class="dice-face" id="dice-face">–</div>
                   <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
@@ -882,6 +892,7 @@
       skillActivations: { player1: {}, player2: {} },
       skillDone: { player1: false, player2: false },
       diceOff: null,
+      diceOffPending: false,
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -1040,7 +1051,17 @@
 
     // --- イニシアチブフェーズ：先後決定（技能発動より先に確定する） ---
     resolveInitiativeIfNeeded();
-    maybeShowDiceOffModal();
+
+    if(latestBattle.diceOffPending && !latestBattle.firstSlot){
+      document.getElementById('initiative-panel').classList.add('hidden');
+      document.getElementById('skill-activation-panel').classList.add('hidden');
+      document.getElementById('teleport-decide-panel').classList.add('hidden');
+      document.getElementById('judge-panel-wrap').classList.add('hidden');
+      renderDiceOffPanel();
+      resolveDiceOffIfNeeded();
+      return;
+    }
+    document.getElementById('dice-off-panel').classList.add('hidden');
 
     if(!latestBattle.firstSlot){
       document.getElementById('skill-activation-panel').classList.add('hidden');
@@ -1239,15 +1260,10 @@
       update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser })
         .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
     } else if(p1Card.type === p2Card.type && p1Card.number === p2Card.number){
-      // タイプ・数字が完全に同じ場合は、1d10のダイス勝負で先手を決める（同数なら振り直す）
-      let r1, r2;
-      do {
-        r1 = Math.floor(Math.random()*10) + 1;
-        r2 = Math.floor(Math.random()*10) + 1;
-      } while(r1 === r2);
-      const first = r1 > r2 ? 'player1' : 'player2';
-      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first, diceOff: { player1: r1, player2: r2 } })
+      // タイプ・数字が完全に同じ場合は、各プレイヤー自身がダイスを振って先手を決める
+      update(ref(db, `rooms/${roomId}/battle`), { diceOffPending: true, diceOff: { player1: null, player2: null } })
         .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'タイプ・数字が同じため、ダイス勝負で先手を決めます。', ts: Date.now() });
     } else {
       const first = (Math.floor(Math.random()*2) === 0) ? 'player1' : 'player2';
       update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first })
@@ -1255,38 +1271,34 @@
     }
   }
 
-  let diceOffModalShownForTurn = null;
-  function maybeShowDiceOffModal(){
-    if(!latestBattle || !latestBattle.diceOff) return;
-    if(diceOffModalShownForTurn === latestBattle.turn) return;
-    diceOffModalShownForTurn = latestBattle.turn;
-    const { player1: r1, player2: r2 } = latestBattle.diceOff;
-    const winner = r1 > r2 ? 'player1' : 'player2';
-    const overlay = document.createElement('div');
-    overlay.className = 'picker-overlay';
-    overlay.innerHTML = `
-      <div class="picker-modal" style="width:min(420px,100%); text-align:center;">
-        <div class="picker-header"><span>先手・後手を1d10で決定</span><button type="button" class="picker-close" aria-label="閉じる">✕</button></div>
-        <div style="padding:24px 18px;">
-          <p class="ready-note" style="margin-bottom:16px;">両者のタイプ・数字が同じだったため、1d10のダイスで先手を決めます。</p>
-          <div style="display:flex; justify-content:center; gap:32px; margin-bottom:18px;">
-            <div>
-              <div class="ready-note" style="margin-bottom:6px;">${escapeHtml(memberName('player1'))}</div>
-              <div class="dice-face" style="margin:0 auto;">${r1}</div>
-            </div>
-            <div>
-              <div class="ready-note" style="margin-bottom:6px;">${escapeHtml(memberName('player2'))}</div>
-              <div class="dice-face" style="margin:0 auto;">${r2}</div>
-            </div>
-          </div>
-          <p style="font-family:var(--font-display); color:var(--gold); font-size:16px; margin:0;">先手：${escapeHtml(memberName(winner))}</p>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    const close = () => overlay.remove();
-    overlay.querySelector('.picker-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+  function resolveDiceOffIfNeeded(){
+    // 決定的な比較処理なので、複数のロールで重複実行されても内容は一致する
+    if(!(myRole === 'player1' || myRole === 'player2' || myRole === 'judge')) return;
+    if(!latestBattle.diceOffPending || latestBattle.firstSlot) return;
+    const d = latestBattle.diceOff || {};
+    if(d.player1 == null || d.player2 == null) return;
+    if(d.player1 === d.player2){
+      update(ref(db, `rooms/${roomId}/battle/diceOff`), { player1: null, player2: null });
+      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`ダイスの目が同じ（${d.player1}）だったため、振り直します。`, ts: Date.now() });
+    } else {
+      const first = d.player1 > d.player2 ? 'player1' : 'player2';
+      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first, diceOffPending: false });
+      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`ダイス勝負の結果（${memberName('player1')}:${d.player1}／${memberName('player2')}:${d.player2}）、${memberName(first)}が先手になりました。`, ts: Date.now() });
+    }
+  }
+
+  function renderDiceOffPanel(){
+    const panel = document.getElementById('dice-off-panel');
+    panel.classList.remove('hidden');
+    const d = latestBattle.diceOff || {};
+    document.getElementById('dice-off-status').textContent =
+      `${memberName('player1')}: ${d.player1 != null ? d.player1 : '未'}／${memberName('player2')}: ${d.player2 != null ? d.player2 : '未'}`;
+    const btn = document.getElementById('btn-dice-off-roll');
+    const isPlayer = myRole === 'player1' || myRole === 'player2';
+    btn.classList.toggle('hidden', !isPlayer);
+    if(isPlayer){
+      btn.disabled = d[myRole] != null;
+    }
   }
 
   function memberName(slot){
@@ -1640,6 +1652,16 @@
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `技能の発動を終えた。`, ts: Date.now() });
   });
 
+  document.getElementById('btn-dice-off-roll').addEventListener('click', async () => {
+    if(!(myRole === 'player1' || myRole === 'player2')) return;
+    if(!latestBattle.diceOffPending || latestBattle.firstSlot) return;
+    const d = latestBattle.diceOff || {};
+    if(d[myRole] != null) return;
+    const value = Math.floor(Math.random()*10) + 1;
+    await update(ref(db, `rooms/${roomId}/battle/diceOff`), { [myRole]: value });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `先手決定のダイスを振り、${value}が出た。`, ts: Date.now() });
+  });
+
   document.getElementById('btn-roll-dice').addEventListener('click', async () => {
     const sidesInput = document.getElementById('dice-sides');
     let sides = parseInt(sidesInput.value, 10);
@@ -1846,6 +1868,7 @@
     updates['battle/skillActivations'] = { player1: {}, player2: {} };
     updates['battle/skillDone'] = { player1: false, player2: false };
     updates['battle/diceOff'] = null;
+    updates['battle/diceOffPending'] = false;
     updates['battle/undoSnapshot'] = snapshotBeforeThisRound;
 
     if(finished){
@@ -1965,6 +1988,7 @@
       skillActivations:{player1:{}, player2:{}},
       skillDone:{player1:false, player2:false},
       diceOff:null,
+      diceOffPending:false,
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
