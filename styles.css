@@ -777,6 +777,8 @@
   }
   .log-item-clickable:hover{ background: rgba(201,162,39,0.18); }
   .log-item .log-meta{ font-family: var(--font-mono); font-size: 11px; font-weight: 600; margin-right: 8px; }
+  .log-item .log-meta-me{ color: #2a5a8a; }
+  .log-item .log-meta-opp{ color: #a5271e; }
   .log-form{ display:flex; gap: 8px; }
   .log-form input[type="text"]{ margin-bottom:0; flex:1; }
 

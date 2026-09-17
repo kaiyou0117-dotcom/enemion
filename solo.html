@@ -273,6 +273,7 @@
   let firstSlot = null; // 'me'|'opp'
   let initiativePending = null; // 'me'|'opp'|null
   let mySkillActivations = {}; // { 効果名: true }
+  let oppSkillActivations = {}; // { 効果名: true }（仮想の相手用）
   let mySkillDone = false;
   let teleportChoicePending = false;
   let soloActionLog = []; // [{text, ts}]
@@ -565,6 +566,7 @@
     soloStatusEffects = [];
     soloCardEffects = { me: {}, opp: {} };
     mySkillActivations = {};
+    oppSkillActivations = {};
     mySkillDone = false;
     teleportChoicePending = false;
     soloActionLog = [];
@@ -713,7 +715,10 @@
       }
       const oppCardEl = document.querySelector(`#solo-field-board .reveal-card[data-card-slot="opp"]`);
       if(oppCardEl){
-        oppCardEl.querySelectorAll('.effect-chip').forEach(chip => chip.classList.remove('activatable'));
+        oppCardEl.querySelectorAll('.effect-chip').forEach(chip => {
+          chip.classList.remove('activatable');
+          chip.classList.toggle('activated-used', !!oppSkillActivations[chip.dataset.effectName]);
+        });
       }
       return;
     }
@@ -730,7 +735,12 @@
       list.innerHTML = '<div class="status-empty">まだ記録はありません。</div>';
       return;
     }
-    list.innerHTML = soloActionLog.map((item, idx) => `<div class="log-item${item.detail ? ' log-item-clickable' : ''}" data-log-idx="${idx}"><span class="log-meta">あなた</span>${escapeHtml(item.text)}</div>`).join('');
+    list.innerHTML = soloActionLog.map((item, idx) => {
+      const isOpp = item.who === 'opp';
+      const prefixText = isOpp ? '仮想の相手' : 'あなた';
+      const colorClass = isOpp ? 'log-meta-opp' : 'log-meta-me';
+      return `<div class="log-item${item.detail ? ' log-item-clickable' : ''}" data-log-idx="${idx}"><span class="log-meta ${colorClass}">${prefixText}</span>${escapeHtml(item.text)}</div>`;
+    }).join('');
     list.scrollTop = list.scrollHeight;
     list.querySelectorAll('[data-log-idx]').forEach(el => {
       const item = soloActionLog[parseInt(el.dataset.logIdx, 10)];
@@ -742,7 +752,8 @@
   }
 
   function logSoloAction(text, detail){
-    soloActionLog.push({ text, ts: Date.now(), detail: detail || null });
+    const who = (detail && detail.who) || 'me';
+    soloActionLog.push({ text, ts: Date.now(), detail: detail || null, who });
     renderSoloActionLog();
   }
 
@@ -854,13 +865,28 @@
     const oppIdx = affordableOpp.length ? randomChoice(affordableOpp) : randomChoice(oppDeck.map((c,i)=>i));
     const oppCard = oppDeck[oppIdx];
     ee.opp -= getEffectiveNumber('opp', oppIdx);
+    let finalIdx = oppIdx;
     if((oppCard.effectNames||[]).includes('テレポート') && !oppTeleportLock[oppIdx] && Math.random() < 0.5){
       const others = oppDeck.map((c,i)=>i).filter(i => i !== oppIdx);
       const targetIdx = randomChoice(others);
       picks.opp = { cardIndex: targetIdx, teleportOriginIdx: oppIdx };
+      finalIdx = targetIdx;
+      const targetCard = oppDeck[targetIdx];
+      oppSkillActivations['テレポート'] = true;
+      logSoloAction(`「${oppCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, { effectName: 'テレポート', cardName: oppCard.name, cardNumber: oppCard.number, who: 'opp' });
     } else {
       picks.opp = { cardIndex: oppIdx, teleportOriginIdx: null };
     }
+
+    // 仮想の相手も、場に出たカードの技能を自動で発動する（マイナス効果・テレポートは対象外）
+    const finalCard = oppDeck[finalIdx];
+    (finalCard.effectNames || []).forEach(effName => {
+      if(effName === 'テレポート') return;
+      const effObj = effectByName(effName);
+      if(effObj && effObj.pt < 0) return;
+      oppSkillActivations[effName] = true;
+      logSoloAction(`「${effName}」を発動した。`, { effectName: effName, cardName: finalCard.name, cardNumber: finalCard.number, who: 'opp' });
+    });
   }
 
   document.getElementById('btn-solo-lock').addEventListener('click', () => {
@@ -1012,6 +1038,7 @@
     turn += 1;
     judgePanelTurnMark = null;
     mySkillActivations = {};
+    oppSkillActivations = {};
     mySkillDone = false;
     teleportChoicePending = false;
     tickSoloStatusEffects();
