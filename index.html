@@ -501,12 +501,25 @@
     });
 
     document.getElementById('you-badge').textContent = `あなた: ${myName}（${roleDisplay(myRole)}）`;
+
+    if(myRole === 'watch-only'){
+      const inputLog = document.getElementById('input-log');
+      const btnLogSend = document.getElementById('btn-log-send');
+      inputLog.disabled = true;
+      inputLog.placeholder = '閲覧のみのため、記録の書き込みはできません';
+      btnLogSend.disabled = true;
+    }
   }
 
   function renderMembers(target, data){
     if(!target) return;
     target.innerHTML = '';
-    Object.values(data).sort((a,b) => (a.slot > b.slot ? 1 : -1)).forEach(m => {
+    const visibleMembers = Object.values(data)
+      .filter(m => m.slot !== 'watch-only')
+      .sort((a,b) => (a.slot > b.slot ? 1 : -1));
+    const watchOnlyCount = Object.values(data).filter(m => m.slot === 'watch-only').length;
+
+    visibleMembers.forEach(m => {
       const div = document.createElement('div');
       div.className = 'member-card';
       const avatarHtml = m.avatar ? `<img class="avatar-thumb" src="${m.avatar}" alt="">` : '';
@@ -519,6 +532,13 @@
       }
       target.appendChild(div);
     });
+
+    if(watchOnlyCount > 0){
+      const div = document.createElement('div');
+      div.className = 'member-card';
+      div.innerHTML = `<div class="role-label">人数</div><div class="member-name">閲覧のみ：${watchOnlyCount}人</div>`;
+      target.appendChild(div);
+    }
   }
 
   function openDeckViewModal(slot){
@@ -2017,6 +2037,7 @@
   document.getElementById('btn-log-send').addEventListener('click', sendLog);
   document.getElementById('input-log').addEventListener('keydown', (e) => { if(e.key === 'Enter') sendLog(); });
   async function sendLog(){
+    if(myRole === 'watch-only') return;
     const inputLog = document.getElementById('input-log');
     const text = inputLog.value.trim();
     if(!text) return;
