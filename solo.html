@@ -730,13 +730,46 @@
       list.innerHTML = '<div class="status-empty">まだ記録はありません。</div>';
       return;
     }
-    list.innerHTML = soloActionLog.map(item => `<div class="log-item"><span class="log-meta">あなた</span>${escapeHtml(item.text)}</div>`).join('');
+    list.innerHTML = soloActionLog.map((item, idx) => `<div class="log-item${item.detail ? ' log-item-clickable' : ''}" data-log-idx="${idx}"><span class="log-meta">あなた</span>${escapeHtml(item.text)}</div>`).join('');
     list.scrollTop = list.scrollHeight;
+    list.querySelectorAll('[data-log-idx]').forEach(el => {
+      const item = soloActionLog[parseInt(el.dataset.logIdx, 10)];
+      if(item && item.detail){
+        el.title = 'クリックで発動の詳細を見る';
+        el.addEventListener('click', () => openSoloSkillLogDetailModal(item.detail));
+      }
+    });
   }
 
-  function logSoloAction(text){
-    soloActionLog.push({ text, ts: Date.now() });
+  function logSoloAction(text, detail){
+    soloActionLog.push({ text, ts: Date.now(), detail: detail || null });
     renderSoloActionLog();
+  }
+
+  function openSoloSkillLogDetailModal(detail){
+    const effObj = effectByName(detail.effectName);
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(420px,100%);">
+        <div class="picker-header">
+          <span>技能発動の詳細</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div style="padding:18px;">
+          <p class="ready-note" style="margin-bottom:4px;">発動者：${detail.who === 'me' ? 'あなた' : '仮想の相手'}</p>
+          <p class="ready-note" style="margin-bottom:14px;">カード：数字${detail.cardNumber}「${escapeHtml(detail.cardName)||'無題'}」</p>
+          <div class="effect-chip">
+            <div class="ec-head"><span class="ec-name">${escapeHtml(detail.effectName)}</span>${effObj ? `<span class="ec-pt">${effObj.pt}pt</span>` : ''}</div>
+            <div class="ec-text">${effObj ? escapeHtml(effObj.text) : '（効果情報が見つかりませんでした）'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
   }
 
   function activateMySkill(effName){
@@ -750,8 +783,9 @@
       return;
     }
 
+    const card = getBattleCard('me');
     mySkillActivations[effName] = true;
-    logSoloAction(`「${effName}」を発動した。`);
+    logSoloAction(`「${effName}」を発動した。`, { effectName: effName, cardName: card.name, cardNumber: card.number, who: 'me' });
     renderSoloBattle();
   }
 
@@ -853,16 +887,17 @@
     // 場に来るのは呼び出された側のカードそのもの。EEは元カードの分のみで済む。
     picks.me = { cardIndex: targetIdx, teleportOriginIdx: originIdx };
     mySkillActivations['テレポート'] = true;
-    logSoloAction(`「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`);
+    logSoloAction(`「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, { effectName: 'テレポート', cardName: originCard.name, cardNumber: originCard.number, who: 'me' });
     renderSoloBattle();
   });
 
   document.getElementById('btn-solo-teleport-skip').addEventListener('click', () => {
     const pick = picks.me;
     if(!pick) return;
+    const originCard = myDeck[pick.cardIndex];
     teleportChoicePending = false;
     mySkillActivations['テレポート'] = true;
-    logSoloAction('【テレポート】を発動しなかった。');
+    logSoloAction('【テレポート】を発動しなかった。', { effectName: 'テレポート', cardName: originCard.name, cardNumber: originCard.number, who: 'me' });
     renderSoloBattle();
   });
 

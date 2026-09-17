@@ -392,6 +392,32 @@
   }
   const oppSlot = (slot) => slot === 'player1' ? 'player2' : 'player1';
 
+  function openSkillLogDetailModal(item){
+    const effObj = effectByName(item.effectName);
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(420px,100%);">
+        <div class="picker-header">
+          <span>技能発動の詳細</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div style="padding:18px;">
+          <p class="ready-note" style="margin-bottom:4px;">発動者：${escapeHtml(item.from)}（${roleDisplay(item.role)}）</p>
+          <p class="ready-note" style="margin-bottom:14px;">カード：数字${item.cardNumber}「${escapeHtml(item.cardName)||'無題'}」</p>
+          <div class="effect-chip">
+            <div class="ec-head"><span class="ec-name">${escapeHtml(item.effectName)}</span>${effObj ? `<span class="ec-pt">${effObj.pt}pt</span>` : ''}</div>
+            <div class="ec-text">${effObj ? escapeHtml(effObj.text) : '（効果情報が見つかりませんでした）'}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+  }
+
   // ============ 入室処理 ============
   btnEnter.addEventListener('click', async () => {
     entryError.textContent = '';
@@ -505,6 +531,11 @@
         const member = Object.values(latestMembers).find(m => m.name === item.from && m.slot === item.role);
         const avatarHtml = (member && member.avatar) ? `<img class="log-meta-avatar" src="${member.avatar}" alt="">` : '';
         div.innerHTML = `${avatarHtml}<span class="log-meta" style="color:${color};">${escapeHtml(item.from)}</span>${escapeHtml(item.text)}`;
+        if(item.kind === 'skillActivation'){
+          div.classList.add('log-item-clickable');
+          div.title = 'クリックで発動の詳細を見る';
+          div.addEventListener('click', () => openSkillLogDetailModal(item));
+        }
         logList.appendChild(div);
       });
       logList.scrollTop = logList.scrollHeight;
@@ -1181,8 +1212,12 @@
       return;
     }
 
+    const card = getBattleCard(slot);
     await update(ref(db, `rooms/${roomId}/battle/skillActivations/${slot}`), { [effName]: true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${effName}」を発動した。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), {
+      from: myName, role: myRole, text: `「${effName}」を発動した。`, ts: Date.now(),
+      kind: 'skillActivation', effectName: effName, cardName: card.name, cardNumber: card.number
+    });
   }
 
   // ジャッジがカードに付与した「数字補正」効果の合計値を返す
@@ -1631,15 +1666,22 @@
     // 場に来るのは呼び出された側のカードそのもの。
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), { cardIndex: targetIdx, teleportOriginIdx: originIdx, locked: true });
     await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), {
+      from: myName, role: myRole, text: `「${originCard.name||'無題'}」の【テレポート】を発動し、数字${targetCard.number}のカード「${targetCard.name||'無題'}」をそのまま場に呼び出した。`, ts: Date.now(),
+      kind: 'skillActivation', effectName: 'テレポート', cardName: originCard.name, cardNumber: originCard.number
+    });
   });
 
   document.getElementById('btn-teleport-skip').addEventListener('click', async () => {
     const pick = latestBattle.picks[myRole];
     if(!pick || !pick.locked) return;
+    const originCard = latestDecks[myRole].cards[pick.cardIndex];
     teleportChoicePending = false; // Firebase書き込み前に戻す
     await update(ref(db, `rooms/${roomId}/battle/skillActivations/${myRole}`), { 'テレポート': true });
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `【テレポート】を発動しなかった。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), {
+      from: myName, role: myRole, text: `【テレポート】を発動しなかった。`, ts: Date.now(),
+      kind: 'skillActivation', effectName: 'テレポート', cardName: originCard.name, cardNumber: originCard.number
+    });
   });
 
   document.getElementById('btn-skill-activation-done').addEventListener('click', async () => {
