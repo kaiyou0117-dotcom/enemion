@@ -134,6 +134,16 @@
               <div class="phase-actions" id="solo-initiative-buttons"></div>
             </div>
 
+            <!-- ダイス勝負：タイプ・数字が同じ場合、プレイヤー自身が振って先手を決める -->
+            <div id="solo-dice-off-panel" class="hidden">
+              <h3>ダイス勝負（先手決定）</h3>
+              <p class="ready-note">タイプ・数字が同じため、1d10のダイス勝負で先手を決めます。同じ目が出た場合は振り直しになります。</p>
+              <p class="ready-note" id="solo-dice-off-status"></p>
+              <div class="phase-actions">
+                <button class="ghost-btn" id="btn-solo-dice-off-roll">1d10を振る</button>
+              </div>
+            </div>
+
             <div class="dice-area">
               <div class="dice-face" id="solo-dice-face">–</div>
               <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
@@ -279,6 +289,8 @@
   let oppSkillActivations = {}; // { 効果名: true }（仮想の相手用）
   let mySkillDone = false;
   let oppSkillDone = false;
+  let diceOffPending = false;
+  let diceOff = { me: null, opp: null };
   let teleportChoicePending = false;
   let soloActionLog = []; // [{text, ts}]
   let judgePanelTurnMark = null;
@@ -574,6 +586,8 @@
     mySkillDone = false;
     oppSkillDone = false;
     teleportChoicePending = false;
+    diceOffPending = false;
+    diceOff = { me: null, opp: null };
     soloActionLog = [];
     renderSoloStatusList();
     renderSoloCardEffectPanel();
@@ -680,6 +694,17 @@
     // --- イニシアチブ ---
     resolveInitiativeIfNeeded();
 
+    if(diceOffPending && !firstSlot){
+      document.getElementById('solo-initiative-panel').classList.add('hidden');
+      document.getElementById('solo-skill-activation-panel').classList.add('hidden');
+      document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
+      document.getElementById('solo-judge-panel').classList.add('hidden');
+      renderDiceOffPanel();
+      resolveDiceOffIfNeeded();
+      return;
+    }
+    document.getElementById('solo-dice-off-panel').classList.add('hidden');
+
     if(!firstSlot){
       document.getElementById('solo-teleport-decide-panel').classList.add('hidden');
       document.getElementById('solo-skill-activation-panel').classList.add('hidden');
@@ -773,9 +798,10 @@
       return;
     }
     list.innerHTML = soloActionLog.map((item, idx) => {
-      const isOpp = item.who === 'opp';
-      const prefixText = isOpp ? '仮想の相手' : 'あなた';
-      const colorClass = isOpp ? 'log-meta-opp' : 'log-meta-me';
+      let prefixText, colorClass;
+      if(item.who === 'system'){ prefixText = '卓'; colorClass = 'log-meta-system'; }
+      else if(item.who === 'opp'){ prefixText = '仮想の相手'; colorClass = 'log-meta-opp'; }
+      else { prefixText = 'あなた'; colorClass = 'log-meta-me'; }
       return `<div class="log-item${item.detail ? ' log-item-clickable' : ''}" data-log-idx="${idx}"><span class="log-meta ${colorClass}">${prefixText}</span>${escapeHtml(item.text)}</div>`;
     }).join('');
     list.scrollTop = list.scrollHeight;
@@ -861,9 +887,37 @@
     } else if(chooser === 'opp'){
       // 仮想の相手は即座にランダムで選ぶ
       firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
+    } else if(myCard.type === oppCard.type && myCard.number === oppCard.number){
+      // タイプ・数字が完全に同じ場合は、プレイヤー自身がダイスを振って先手を決める（仮想の相手は自動で即振る）
+      diceOffPending = true;
+      diceOff = { me: null, opp: Math.floor(Math.random()*10) + 1 };
+      logSoloAction('タイプ・数字が同じため、ダイス勝負で先手を決めます。', { who: 'system' });
+      logSoloAction(`先手決定のダイスを振り、${diceOff.opp}が出た。`, { who: 'opp' });
     } else {
       firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
     }
+  }
+
+  function resolveDiceOffIfNeeded(){
+    if(!diceOffPending || firstSlot) return;
+    if(diceOff.me == null || diceOff.opp == null) return;
+    if(diceOff.me === diceOff.opp){
+      logSoloAction(`ダイスの目が同じ（${diceOff.me}）だったため、振り直します。`, { who: 'system' });
+      diceOff = { me: null, opp: Math.floor(Math.random()*10) + 1 };
+      logSoloAction(`先手決定のダイスを振り、${diceOff.opp}が出た。`, { who: 'opp' });
+    } else {
+      firstSlot = diceOff.me > diceOff.opp ? 'me' : 'opp';
+      diceOffPending = false;
+      const nameOf = (w) => w === 'me' ? 'あなた' : '仮想の相手';
+      logSoloAction(`ダイス勝負の結果（あなた:${diceOff.me}／仮想の相手:${diceOff.opp}）、${nameOf(firstSlot)}が先手になりました。`, { who: 'system' });
+    }
+  }
+
+  function renderDiceOffPanel(){
+    document.getElementById('solo-dice-off-panel').classList.remove('hidden');
+    document.getElementById('solo-dice-off-status').textContent =
+      `あなた: ${diceOff.me != null ? diceOff.me : '未'}／仮想の相手: ${diceOff.opp != null ? diceOff.opp : '未'}`;
+    document.getElementById('btn-solo-dice-off-roll').disabled = diceOff.me != null;
   }
 
   function revealCardHtml(sideName, card, who){
@@ -968,6 +1022,16 @@
     teleportChoicePending = false;
     mySkillActivations['テレポート'] = true;
     logSoloAction('【テレポート】を発動しなかった。', { effectName: 'テレポート', cardName: originCard.name, cardNumber: originCard.number, who: 'me' });
+    renderSoloBattle();
+  });
+
+  document.getElementById('btn-solo-dice-off-roll').addEventListener('click', () => {
+    if(!diceOffPending || firstSlot) return;
+    if(diceOff.me != null) return;
+    const value = Math.floor(Math.random()*10) + 1;
+    diceOff.me = value;
+    logSoloAction(`先手決定のダイスを振り、${value}が出た。`, { who: 'me' });
+    resolveDiceOffIfNeeded();
     renderSoloBattle();
   });
 
@@ -1086,6 +1150,8 @@
     mySkillDone = false;
     oppSkillDone = false;
     teleportChoicePending = false;
+    diceOffPending = false;
+    diceOff = { me: null, opp: null };
     tickSoloStatusEffects();
     tickSoloCardEffects();
 
