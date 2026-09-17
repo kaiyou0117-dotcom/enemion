@@ -106,7 +106,10 @@
                 <div class="side-name" id="score-name-p1">プレイヤー1</div>
                 <div class="pips" id="pips-p1"></div>
               </div>
-              <div class="turn-mid" id="turn-indicator"></div>
+              <div class="turn-mid">
+                <div id="turn-indicator"></div>
+                <div class="ready-note" id="turn-order-indicator"></div>
+              </div>
               <div class="score-side">
                 <div class="side-name" id="score-name-p2">プレイヤー2</div>
                 <div class="pips" id="pips-p2"></div>
@@ -956,6 +959,20 @@
     renderPips('pips-p1', latestBattle.points.player1);
     renderPips('pips-p2', latestBattle.points.player2);
     document.getElementById('turn-indicator').textContent = `第${latestBattle.turn}ターン`;
+
+    const orderIndicator = document.getElementById('turn-order-indicator');
+    if(!latestBattle.firstSlot){
+      orderIndicator.textContent = '先手／後手：未定';
+    } else {
+      const secondSlotForDisplay = oppSlot(latestBattle.firstSlot);
+      const skillDoneMap = latestBattle.skillDone || { player1:false, player2:false };
+      let currentActorForDisplay = null;
+      if(!skillDoneMap[latestBattle.firstSlot]) currentActorForDisplay = latestBattle.firstSlot;
+      else if(!skillDoneMap[secondSlotForDisplay]) currentActorForDisplay = secondSlotForDisplay;
+      const orderText = `先手：${memberName(latestBattle.firstSlot)}／後手：${memberName(secondSlotForDisplay)}`;
+      const turnText = currentActorForDisplay ? `　現在：${memberName(currentActorForDisplay)}の番` : '';
+      orderIndicator.textContent = orderText + turnText;
+    }
 
     const ee = latestBattle.ee || {player1:2, player2:2};
     document.getElementById('ee-bar').innerHTML =

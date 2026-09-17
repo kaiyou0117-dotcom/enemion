@@ -505,6 +505,7 @@
   .pip{ width:14px; height:14px; border-radius:50%; border:1px solid var(--edge); background: var(--panel-2); }
   .pip.filled{ background: var(--red-glow); border-color: var(--red-glow); }
   .turn-mid{ font-family: var(--font-mono); font-size: 12px; color: var(--gold); text-align:center; }
+  .turn-mid #turn-order-indicator{ margin-top: 4px; }
 
   .hand-section{ margin-bottom: 22px; }
   .hand-section h3{ font-family: var(--font-display); font-size: 15px; color: var(--ink-dim); margin: 0 0 10px; }
