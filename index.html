@@ -1303,9 +1303,13 @@
       if(advType === 'spd') chooser = advSlot;
     }
     if(!chooser){
-      // 万能タイプ：有利不利とは無関係に、相手より数字が大きければ選べる
+      // 万能タイプ：優先度で有利でも、相手より数字が大きくなければ選べない
       if(p1Card.type === 'uni' && p1Card.number > p2Card.number) chooser = 'player1';
       else if(p2Card.type === 'uni' && p2Card.number > p1Card.number) chooser = 'player2';
+    }
+    if(!chooser && p1Card.type === p2Card.type && p1Card.number !== p2Card.number){
+      // タイプが同じ（＝優先度も同じ）場合、数字が大きい方が先手／後手を選べる
+      chooser = p1Card.number > p2Card.number ? 'player1' : 'player2';
     }
 
     if(chooser){

@@ -881,6 +881,10 @@
       if(myCard.type === 'uni' && myCard.number > oppCard.number) chooser = 'me';
       else if(oppCard.type === 'uni' && oppCard.number > myCard.number) chooser = 'opp';
     }
+    if(!chooser && myCard.type === oppCard.type && myCard.number !== oppCard.number){
+      // タイプが同じ（＝優先度も同じ）場合、数字が大きい方が先手／後手を選べる
+      chooser = myCard.number > oppCard.number ? 'me' : 'opp';
+    }
 
     if(chooser === 'me'){
       initiativePending = 'me';
