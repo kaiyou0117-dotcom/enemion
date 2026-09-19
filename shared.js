@@ -369,14 +369,14 @@ export function validateDeckWide(cards){
 
 export function typeAdvantage(typeA, typeB){
     // 戻り値: 'A' | 'B' | null（有利側、なければnull）
-    // タイプの優先度：速度🔵(3) > 万能🟡(2) > 防御🟢(1) > 攻撃🔴(0)。優先度が高い方が有利。
-    const priority = { atk: 0, def: 1, uni: 2, spd: 3 };
-    if(typeA==='spc' && typeB==='uni') return 'A';
-    if(typeB==='spc' && typeA==='uni') return 'B';
-    if(typeA==='spc' && ['atk','spd','def'].includes(typeB)) return 'B';
-    if(typeB==='spc' && ['atk','spd','def'].includes(typeA)) return 'A';
-    if(typeA === typeB) return null;
-    if(priority[typeA] > priority[typeB]) return 'A';
-    if(priority[typeB] > priority[typeA]) return 'B';
+    // 三すくみ：攻撃は防御に有利、防御は速度に有利、速度は攻撃に有利。
+    // 万能は三者に対して有利不利なし。特化は万能にだけ有利、攻撃・防御・速度の全てに不利（固定。何を選んでいても変わらない）。
+    if(typeA === 'spc' && typeB === 'uni') return 'A';
+    if(typeB === 'spc' && typeA === 'uni') return 'B';
+    if(typeA === 'spc' && ['atk','spd','def'].includes(typeB)) return 'B';
+    if(typeB === 'spc' && ['atk','spd','def'].includes(typeA)) return 'A';
+    const cycle = { atk: 'def', def: 'spd', spd: 'atk' };
+    if(cycle[typeA] === typeB) return 'A';
+    if(cycle[typeB] === typeA) return 'B';
     return null;
   }

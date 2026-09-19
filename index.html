@@ -143,6 +143,11 @@
                 <button type="button" class="ghost-btn" id="btn-admin-undo">場の状態を一つ前に戻す</button>
                 <span class="ready-note" id="admin-undo-note">直前に確定した番の裁定を取り消し、確定前の状態に戻します（1回分のみ）。</span>
               </div>
+              <div class="judge-admin-row" id="admin-force-initiative-row">
+                <span class="ready-note">先手が決まらず進行が止まってしまった場合：</span>
+                <button type="button" class="ghost-btn" id="btn-admin-force-p1-first">プレイヤー1を先手にする</button>
+                <button type="button" class="ghost-btn" id="btn-admin-force-p2-first">プレイヤー2を先手にする</button>
+              </div>
               <div class="judge-admin-lock-wrap">
                 <div>
                   <div class="judge-admin-lock-label" id="admin-lock-label-p1">プレイヤー1のカード</div>
@@ -1272,13 +1277,19 @@
     if(eeDeductedForTurn === latestBattle.turn) return;
     eeDeductedForTurn = latestBattle.turn;
 
-    const p1Cost = Math.max(0, getEffectiveNumber('player1', p1Pick.cardIndex) - (p1Pick.fourCountReduction || 0));
-    const p2Cost = Math.max(0, getEffectiveNumber('player2', p2Pick.cardIndex) - (p2Pick.fourCountReduction || 0));
-    const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
-    update(ref(db, `rooms/${roomId}/battle/ee`), {
-      player1: currentEe.player1 - p1Cost,
-      player2: currentEe.player2 - p2Cost
-    }).catch(() => { if(eeDeductedForTurn === latestBattle.turn) eeDeductedForTurn = null; });
+    try{
+      const p1Cost = Math.max(0, getEffectiveNumber('player1', p1Pick.cardIndex) - (p1Pick.fourCountReduction || 0));
+      const p2Cost = Math.max(0, getEffectiveNumber('player2', p2Pick.cardIndex) - (p2Pick.fourCountReduction || 0));
+      const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
+      update(ref(db, `rooms/${roomId}/battle/ee`), {
+        player1: currentEe.player1 - p1Cost,
+        player2: currentEe.player2 - p2Cost
+      }).catch(() => { if(eeDeductedForTurn === latestBattle.turn) eeDeductedForTurn = null; });
+    } catch(err){
+      // 想定外のエラーで固まらないよう、印を戻して次回の再描画で再試行できるようにする
+      eeDeductedForTurn = null;
+      console.error('deductEeOnOpenIfNeeded failed:', err);
+    }
   }
 
   function resolveInitiativeIfNeeded(){
@@ -1290,40 +1301,58 @@
     if(initiativeResolvedForTurn === latestBattle.turn) return;
     initiativeResolvedForTurn = latestBattle.turn;
 
-    const p1Card = getBattleCard('player1');
-    const p2Card = getBattleCard('player2');
-    const adv = typeAdvantage(p1Card.type, p2Card.type);
-    const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
-    const mimic = latestBattle.specialMimic || {};
+    try{
+      const p1Card = getBattleCard('player1');
+      const p2Card = getBattleCard('player2');
+      const mimic = latestBattle.specialMimic || {};
+      const p1EffType = effectiveType(p1Card, mimic.player1);
+      const p2EffType = effectiveType(p2Card, mimic.player2);
 
-    let chooser = null;
-    if(advSlot){
-      const advCard = advSlot==='player1' ? p1Card : p2Card;
-      const advType = effectiveType(advCard, mimic[advSlot]);
-      if(advType === 'spd') chooser = advSlot;
-    }
-    if(!chooser){
-      // 万能タイプ：優先度で有利でも、相手より数字が大きくなければ選べない
-      if(p1Card.type === 'uni' && p1Card.number > p2Card.number) chooser = 'player1';
-      else if(p2Card.type === 'uni' && p2Card.number > p1Card.number) chooser = 'player2';
-    }
-    if(!chooser && p1Card.type === p2Card.type && p1Card.number !== p2Card.number){
-      // タイプが同じ（＝優先度も同じ）場合、数字が大きい方が先手／後手を選べる
-      chooser = p1Card.number > p2Card.number ? 'player1' : 'player2';
-    }
+      // 同じタイプ（＝同じ優先度）の場合：数字が大きい方が選べる。数字も同じならダイス。
+      if(p1EffType === p2EffType){
+        if(p1Card.number !== p2Card.number){
+          const first = p1Card.number > p2Card.number ? 'player1' : 'player2';
+          update(ref(db, `rooms/${roomId}/battle`), { initiativePending: first })
+            .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+          return;
+        }
+        update(ref(db, `rooms/${roomId}/battle`), { diceOffPending: true, diceOff: { player1: null, player2: null } })
+          .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+        push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'タイプ・数字が同じため、ダイス勝負で先手を決めます。', ts: Date.now() });
+        return;
+      }
 
-    if(chooser){
-      update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser })
-        .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
-    } else if(p1Card.type === p2Card.type && p1Card.number === p2Card.number){
-      // タイプ・数字が完全に同じ場合は、各プレイヤー自身がダイスを振って先手を決める
-      update(ref(db, `rooms/${roomId}/battle`), { diceOffPending: true, diceOff: { player1: null, player2: null } })
-        .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
-      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'タイプ・数字が同じため、ダイス勝負で先手を決めます。', ts: Date.now() });
-    } else {
-      const first = (Math.floor(Math.random()*2) === 0) ? 'player1' : 'player2';
+      // 有利判定は三すくみ（＋特化の固定関係）。生のタイプで判定し、パッシブ効果（先後には影響しない）の対象を決める。
+      const adv = typeAdvantage(p1Card.type, p2Card.type);
+      const advSlot = adv === 'A' ? 'player1' : adv === 'B' ? 'player2' : null;
+
+      // 選択制アビリティ：速度は有利なら選べる、万能は数字で上回れば選べる（発動すれば優先度の基本割り振りを上書きする）
+      let chooser = null;
+      if(advSlot){
+        const advCard = advSlot === 'player1' ? p1Card : p2Card;
+        const advEffType = effectiveType(advCard, mimic[advSlot]);
+        if(advEffType === 'spd') chooser = advSlot;
+      }
+      if(!chooser){
+        if(p1EffType === 'uni' && p1Card.number > p2Card.number) chooser = 'player1';
+        else if(p2EffType === 'uni' && p2Card.number > p1Card.number) chooser = 'player2';
+      }
+
+      if(chooser){
+        update(ref(db, `rooms/${roomId}/battle`), { initiativePending: chooser })
+          .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+        return;
+      }
+
+      // 選択制が発動しない場合：タイプごとの優先度（攻撃0・防御1・万能2・速度3）が高い方が自動的に先手、低い方が自動的に後手
+      const PRIORITY = { atk: 0, def: 1, uni: 2, spd: 3 };
+      const first = PRIORITY[p1EffType] > PRIORITY[p2EffType] ? 'player1' : 'player2';
       update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first })
         .catch(() => { if(initiativeResolvedForTurn === latestBattle.turn) initiativeResolvedForTurn = null; });
+    } catch(err){
+      // 想定外のエラーで固まらないよう、印を戻して次回の再描画で再試行できるようにする
+      initiativeResolvedForTurn = null;
+      console.error('resolveInitiativeIfNeeded failed:', err);
     }
   }
 
@@ -1629,6 +1658,21 @@
     await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:'場の状態を一つ前（直前に確定した番の前）に戻した。', ts: Date.now() });
   });
 
+  // イニシアチブが何らかの理由で決まらず進行が止まってしまった場合の、ジャッジによる強制指定
+  async function forceFirstSlot(slot){
+    if(myRole !== 'judge') return;
+    if(!confirm(`${memberName(slot)}を先手として強制的に確定します。よろしいですか？`)) return;
+    await update(ref(db, `rooms/${roomId}/battle`), {
+      firstSlot: slot,
+      initiativePending: null,
+      diceOffPending: false,
+      diceOff: null
+    });
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text: `進行が止まっていたため、${memberName(slot)}を先手として強制的に確定した。`, ts: Date.now() });
+  }
+  document.getElementById('btn-admin-force-p1-first').addEventListener('click', () => forceFirstSlot('player1'));
+  document.getElementById('btn-admin-force-p2-first').addEventListener('click', () => forceFirstSlot('player2'));
+
   function renderPips(id, points){
     const el = document.getElementById(id);
     el.innerHTML = '';
@@ -1646,6 +1690,11 @@
       await update(ref(db, `rooms/${roomId}/battle/mimicNeeded`), { [myRole]: false });
       await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`${myName}が特化タイプの性質を選んだ（内容は秘匿）。`, ts: Date.now() });
     });
+  });
+
+  // 4カウントのチェックは、チェックした瞬間に必要EE表示・発動可否をすぐ反映させる（他の操作を挟まなくても良いように）
+  document.getElementById('chk-four-count').addEventListener('change', () => {
+    if(latestBattle && latestBattle.phase === 'battle') renderBattlePhase();
   });
 
   document.getElementById('btn-lock-card').addEventListener('click', async () => {
@@ -1743,15 +1792,14 @@
   function renderJudgePanel(){
     const p1Card = getBattleCard('player1');
     const p2Card = getBattleCard('player2');
+    const mimic = latestBattle.specialMimic || {};
 
     const adv = typeAdvantage(p1Card.type, p2Card.type);
     const advSlot = adv==='A' ? 'player1' : adv==='B' ? 'player2' : null;
-    const mimic = latestBattle.specialMimic || {};
     const advType = advSlot ? effectiveType(advSlot==='player1'?p1Card:p2Card, mimic[advSlot]) : null;
 
     const advNote = document.getElementById('advantage-note');
-    advNote.textContent = `先手: ${memberName(latestBattle.firstSlot)} ／ ` + (adv === 'A' ? `${memberName('player1')}のタイプが有利（+1）`
-      : adv === 'B' ? `${memberName('player2')}のタイプが有利（+1）`
+    advNote.textContent = `先手: ${memberName(latestBattle.firstSlot)} ／ ` + (advSlot ? `${memberName(advSlot)}のタイプが有利`
       : 'タイプ相性はニュートラル');
 
     let autoAdjP1 = 0, autoAdjP2 = 0;
@@ -1763,8 +1811,6 @@
     } else if(advType === 'def'){
       if(advSlot === 'player1') autoNextEeP1 += 1; else autoNextEeP2 += 1;
       abilityText = `${memberName(advSlot)}の防御タイプにより、次ターン獲得EEに+1を反映済み（調整可）。`;
-    } else if(advType === 'spd'){
-      abilityText = `${memberName(advSlot)}の速度タイプにより、先後を選択しました。`;
     }
     if(p1Card._teleported){ autoNextEeP1 -= 1; abilityText += `　${memberName('player1')}は「${escapeHtml(p1Card._teleportOrigin.name)||'無題'}」の【テレポート】で数字${p1Card.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
     if(p2Card._teleported){ autoNextEeP2 -= 1; abilityText += `　${memberName('player2')}は「${escapeHtml(p2Card._teleportOrigin.name)||'無題'}」の【テレポート】で数字${p2Card.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
@@ -1792,8 +1838,8 @@
     function recalcSuggestion(){
       const adjP1 = parseInt(adjP1El.value || '0', 10);
       const adjP2 = parseInt(adjP2El.value || '0', 10);
-      let p1Total = Math.max(0, p1Card.number + adjP1 + (adv==='A' ? 1 : 0));
-      let p2Total = Math.max(0, p2Card.number + adjP2 + (adv==='B' ? 1 : 0));
+      let p1Total = Math.max(0, p1Card.number + adjP1);
+      let p2Total = Math.max(0, p2Card.number + adjP2);
       let suggested = p1Total > p2Total ? 'player1' : (p2Total > p1Total ? 'player2' : 'draw');
       const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
       if(radio) radio.checked = true;
