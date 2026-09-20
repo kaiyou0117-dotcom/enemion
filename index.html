@@ -1366,9 +1366,9 @@
       update(ref(db, `rooms/${roomId}/battle/diceOff`), { player1: null, player2: null });
       push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`ダイスの目が同じ（${d.player1}）だったため、振り直します。`, ts: Date.now() });
     } else {
-      const first = d.player1 > d.player2 ? 'player1' : 'player2';
-      update(ref(db, `rooms/${roomId}/battle`), { firstSlot: first, diceOffPending: false });
-      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`ダイス勝負の結果（${memberName('player1')}:${d.player1}／${memberName('player2')}:${d.player2}）、${memberName(first)}が先手になりました。`, ts: Date.now() });
+      const winner = d.player1 > d.player2 ? 'player1' : 'player2';
+      update(ref(db, `rooms/${roomId}/battle`), { initiativePending: winner, diceOffPending: false });
+      push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:`ダイス勝負の結果（${memberName('player1')}:${d.player1}／${memberName('player2')}:${d.player2}）、${memberName(winner)}が先手／後手を選べます。`, ts: Date.now() });
     }
   }
 

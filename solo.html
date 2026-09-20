@@ -868,38 +868,54 @@
     if(firstSlot || initiativePending) return;
     const myCard = getBattleCard('me');
     const oppCard = getBattleCard('opp');
-    const adv = typeAdvantage(myCard.type, oppCard.type);
-    const advSlot = adv==='A' ? 'me' : adv==='B' ? 'opp' : null;
+    const myEffType = effectiveType(myCard, mySpecialMimic);
+    const oppEffType = effectiveType(oppCard, oppSpecialMimic);
 
-    let chooser = null;
-    if(advSlot){
-      const advCard = advSlot === 'me' ? myCard : oppCard;
-      const advType = effectiveType(advCard, advSlot==='me' ? mySpecialMimic : oppSpecialMimic);
-      if(advType === 'spd') chooser = advSlot;
-    }
-    if(!chooser){
-      if(myCard.type === 'uni' && myCard.number > oppCard.number) chooser = 'me';
-      else if(oppCard.type === 'uni' && oppCard.number > myCard.number) chooser = 'opp';
-    }
-    if(!chooser && myCard.type === oppCard.type && myCard.number !== oppCard.number){
-      // タイプが同じ（＝優先度も同じ）場合、数字が大きい方が先手／後手を選べる
-      chooser = myCard.number > oppCard.number ? 'me' : 'opp';
-    }
-
-    if(chooser === 'me'){
-      initiativePending = 'me';
-    } else if(chooser === 'opp'){
-      // 仮想の相手は即座にランダムで選ぶ
-      firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
-    } else if(myCard.type === oppCard.type && myCard.number === oppCard.number){
+    // 同じタイプ（＝同じ優先度）の場合：数字が大きい方が選べる。数字も同じならダイス。
+    if(myEffType === oppEffType){
+      if(myCard.number !== oppCard.number){
+        const first = myCard.number > oppCard.number ? 'me' : 'opp';
+        if(first === 'me'){ initiativePending = 'me'; }
+        else { firstSlot = Math.random() < 0.5 ? 'me' : 'opp'; } // 仮想の相手は即座にランダムで選ぶ
+        return;
+      }
       // タイプ・数字が完全に同じ場合は、プレイヤー自身がダイスを振って先手を決める（仮想の相手は自動で即振る）
       diceOffPending = true;
       diceOff = { me: null, opp: Math.floor(Math.random()*10) + 1 };
       logSoloAction('タイプ・数字が同じため、ダイス勝負で先手を決めます。', { who: 'system' });
       logSoloAction(`先手決定のダイスを振り、${diceOff.opp}が出た。`, { who: 'opp' });
-    } else {
-      firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
+      return;
     }
+
+    // 有利判定は三すくみ（＋特化の固定関係）。生のタイプで判定し、パッシブ効果（先後には影響しない）の対象を決める。
+    const adv = typeAdvantage(myCard.type, oppCard.type);
+    const advSlot = adv === 'A' ? 'me' : adv === 'B' ? 'opp' : null;
+
+    // 選択制アビリティ：速度は有利なら選べる、万能は数字で上回れば選べる（発動すれば優先度の基本割り振りを上書きする）
+    let chooser = null;
+    if(advSlot){
+      const advCard = advSlot === 'me' ? myCard : oppCard;
+      const advEffType = effectiveType(advCard, advSlot === 'me' ? mySpecialMimic : oppSpecialMimic);
+      if(advEffType === 'spd') chooser = advSlot;
+    }
+    if(!chooser){
+      if(myEffType === 'uni' && myCard.number > oppCard.number) chooser = 'me';
+      else if(oppEffType === 'uni' && oppCard.number > myCard.number) chooser = 'opp';
+    }
+
+    if(chooser === 'me'){
+      initiativePending = 'me';
+      return;
+    }
+    if(chooser === 'opp'){
+      // 仮想の相手は即座にランダムで選ぶ
+      firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
+      return;
+    }
+
+    // 選択制が発動しない場合：タイプごとの優先度（攻撃0・防御1・万能2・速度3）が高い方が自動的に先手、低い方が自動的に後手
+    const PRIORITY = { atk: 0, def: 1, uni: 2, spd: 3 };
+    firstSlot = PRIORITY[myEffType] > PRIORITY[oppEffType] ? 'me' : 'opp';
   }
 
   function resolveDiceOffIfNeeded(){
@@ -910,10 +926,16 @@
       diceOff = { me: null, opp: Math.floor(Math.random()*10) + 1 };
       logSoloAction(`先手決定のダイスを振り、${diceOff.opp}が出た。`, { who: 'opp' });
     } else {
-      firstSlot = diceOff.me > diceOff.opp ? 'me' : 'opp';
+      const winner = diceOff.me > diceOff.opp ? 'me' : 'opp';
       diceOffPending = false;
       const nameOf = (w) => w === 'me' ? 'あなた' : '仮想の相手';
-      logSoloAction(`ダイス勝負の結果（あなた:${diceOff.me}／仮想の相手:${diceOff.opp}）、${nameOf(firstSlot)}が先手になりました。`, { who: 'system' });
+      logSoloAction(`ダイス勝負の結果（あなた:${diceOff.me}／仮想の相手:${diceOff.opp}）、${nameOf(winner)}が先手／後手を選べます。`, { who: 'system' });
+      if(winner === 'me'){
+        initiativePending = 'me';
+      } else {
+        // 仮想の相手は即座にランダムで選ぶ
+        firstSlot = Math.random() < 0.5 ? 'me' : 'opp';
+      }
     }
   }
 
@@ -1064,7 +1086,7 @@
     const advType = advSlot ? effectiveType(advSlot==='me'?myCard:oppCard, advSlot==='me'?mySpecialMimic:oppSpecialMimic) : null;
 
     document.getElementById('solo-advantage-note').textContent = `先手: ${firstSlot==='me'?'あなた':'仮想の相手'} ／ ` +
-      (adv === 'A' ? 'あなたのタイプが有利（+1）' : adv === 'B' ? '相手のタイプが有利（+1）' : 'タイプ相性はニュートラル');
+      (advSlot ? `${advSlot==='me'?'あなた':'相手'}のタイプが有利` : 'タイプ相性はニュートラル');
 
     let autoAdjMe = 0, autoAdjOpp = 0;
     let autoNextEeMe = 2, autoNextEeOpp = 2;
@@ -1075,8 +1097,6 @@
     } else if(advType === 'def'){
       if(advSlot === 'me') autoNextEeMe += 1; else autoNextEeOpp += 1;
       abilityText = `${advSlot==='me'?'あなた':'相手'}の防御タイプにより、次ターン獲得EEに+1を反映済み（調整可）。`;
-    } else if(advType === 'spd'){
-      abilityText = `${advSlot==='me'?'あなた':'相手'}の速度タイプにより、先後を選択しました。`;
     }
     if(myCard._teleported){ autoNextEeMe -= 1; abilityText += `　あなたは「${escapeHtml(myCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${myCard.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
     if(oppCard._teleported){ autoNextEeOpp -= 1; abilityText += `　相手は「${escapeHtml(oppCard._teleportOrigin.name)||'無題'}」の【テレポート】で数字${oppCard.number}のカードを呼び出し中（次ターン獲得EEに-1を反映済み）。`; }
@@ -1103,8 +1123,8 @@
     function recalc(){
       const adjMe = parseInt(adjMeEl.value || '0', 10);
       const adjOpp = parseInt(adjOppEl.value || '0', 10);
-      const meTotal = Math.max(0, myCard.number + adjMe + (adv==='A'?1:0));
-      const oppTotal = Math.max(0, oppCard.number + adjOpp + (adv==='B'?1:0));
+      const meTotal = Math.max(0, myCard.number + adjMe);
+      const oppTotal = Math.max(0, oppCard.number + adjOpp);
       const suggested = meTotal > oppTotal ? 'me' : (oppTotal > meTotal ? 'opp' : 'draw');
       const radio = winnerRadios.querySelector(`input[value="${suggested}"]`);
       if(radio) radio.checked = true;
@@ -1122,9 +1142,6 @@
 
     const myCard = getBattleCard('me');
     const oppCard = getBattleCard('opp');
-    const adv = typeAdvantage(myCard.type, oppCard.type);
-    const advSlot = adv==='A' ? 'me' : adv==='B' ? 'opp' : null;
-    const advType = advSlot ? effectiveType(advSlot==='me'?myCard:oppCard, advSlot==='me'?mySpecialMimic:oppSpecialMimic) : null;
 
     if(winner === 'me') points.me += award;
     if(winner === 'opp') points.opp += award;
