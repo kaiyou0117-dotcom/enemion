@@ -308,6 +308,20 @@
             </div>
           </div>
 
+          <div class="log-panel" id="secret-chat-panel">
+            <h3>秘匿チャット <span class="ready-note" id="secret-chat-note"></span></h3>
+            <div class="log-list" id="secret-chat-list"></div>
+            <div class="log-form">
+              <input type="text" id="input-secret-chat" placeholder="ジャッジにだけ伝える内容を書く（例：特化タイプの選択）">
+              <button class="ghost-btn" id="btn-secret-chat-send">送る</button>
+            </div>
+          </div>
+
+          <div class="log-panel hidden" id="judge-memo-panel">
+            <h3>ジャッジ専用メモ</h3>
+            <textarea id="judge-memo-textarea" rows="6" placeholder="自分だけのメモ（他の人には見えません。自動で保存されます）" style="width:100%; box-sizing:border-box; resize:vertical;"></textarea>
+          </div>
+
           <div class="log-panel">
             <h3>卓上の記録</h3>
             <div class="log-list" id="log-list"></div>
@@ -549,6 +563,29 @@
       logList.scrollTop = logList.scrollHeight;
     });
 
+    onValue(ref(db, `rooms/${roomId}/secretChat`), (snap) => {
+      const data = snap.val() || {};
+      const items = Object.values(data).sort((a,b) => (a.ts||0) - (b.ts||0));
+      const list = document.getElementById('secret-chat-list');
+      const isJudge = myRole === 'judge';
+      const visible = isJudge ? items : items.filter(item => item.from === myName && item.role === myRole);
+      list.innerHTML = '';
+      if(visible.length === 0){
+        const emptyText = isJudge ? 'まだ秘匿チャットへの書き込みはありません。' : 'ここに書いた内容は、ジャッジにだけ見えます。';
+        list.innerHTML = `<div class="status-empty">${escapeHtml(emptyText)}</div>`;
+      } else {
+        visible.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'log-item';
+          const color = roleLogColor(item.role);
+          div.innerHTML = `<span class="log-meta" style="color:${color};">${escapeHtml(item.from)}</span>${escapeHtml(item.text)}`;
+          list.appendChild(div);
+        });
+      }
+      list.scrollTop = list.scrollHeight;
+      document.getElementById('secret-chat-note').textContent = isJudge ? '（全員からの内容が見えます）' : '（ジャッジにだけ見えます）';
+    });
+
     document.getElementById('you-badge').textContent = `あなた: ${myName}（${roleDisplay(myRole)}）`;
 
     if(myRole === 'watch-only'){
@@ -557,6 +594,28 @@
       inputLog.disabled = true;
       inputLog.placeholder = '閲覧のみのため、記録の書き込みはできません';
       btnLogSend.disabled = true;
+
+      const inputSecret = document.getElementById('input-secret-chat');
+      const btnSecretSend = document.getElementById('btn-secret-chat-send');
+      inputSecret.disabled = true;
+      inputSecret.placeholder = '閲覧のみのため、書き込みはできません';
+      btnSecretSend.disabled = true;
+    }
+
+    if(myRole === 'judge'){
+      document.getElementById('judge-memo-panel').classList.remove('hidden');
+      const memoTextarea = document.getElementById('judge-memo-textarea');
+      onValue(ref(db, `rooms/${roomId}/judgeMemo`), (snap) => {
+        const val = snap.val() || '';
+        if(document.activeElement !== memoTextarea){ memoTextarea.value = val; }
+      });
+      let memoSaveTimer = null;
+      memoTextarea.addEventListener('input', () => {
+        clearTimeout(memoSaveTimer);
+        memoSaveTimer = setTimeout(() => {
+          set(ref(db, `rooms/${roomId}/judgeMemo`), memoTextarea.value);
+        }, 600);
+      });
     }
   }
 
@@ -2224,6 +2283,18 @@
     if(!text) return;
     await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text, ts: Date.now() });
     inputLog.value = '';
+  }
+
+  // ============ 秘匿チャット送信 ============
+  document.getElementById('btn-secret-chat-send').addEventListener('click', sendSecretChat);
+  document.getElementById('input-secret-chat').addEventListener('keydown', (e) => { if(e.key === 'Enter') sendSecretChat(); });
+  async function sendSecretChat(){
+    if(myRole === 'watch-only') return;
+    const inputSecret = document.getElementById('input-secret-chat');
+    const text = inputSecret.value.trim();
+    if(!text) return;
+    await push(ref(db, `rooms/${roomId}/secretChat`), { from: myName, role: myRole, text, ts: Date.now() });
+    inputSecret.value = '';
   }
 </script>
 </body>
