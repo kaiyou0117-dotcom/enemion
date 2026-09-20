@@ -402,6 +402,39 @@
     .status-picker-body{ flex-direction: column; }
     .status-picker-desc{ min-height: 80px; }
   }
+
+  /* ---- モーダル全般：スマホ幅での見やすさ対策 ---- */
+  @media (max-width: 520px){
+    .picker-overlay{ padding: 8px; }
+    .picker-modal{ max-height: 94vh; }
+    .picker-header{
+      padding: 12px 14px;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    .status-picker-modal .status-picker-left .picker-grid{
+      grid-template-columns: 1fr;
+      max-height: 220px;
+    }
+    .picker-card{ padding: 9px 10px; }
+    .picker-card-name{ font-size: 13px; }
+    .picker-card-text{ font-size: 11px; }
+    .status-picker-desc{ padding: 12px; min-height: 60px; }
+    .status-picker-desc-body{ font-size: 12px; line-height: 1.6; }
+    input.picker-search{ font-size: 13px; }
+    .judge-admin-row{
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+    }
+    .judge-admin-row label{ font-size: 11px; }
+    .judge-admin-row input[type="text"],
+    .judge-admin-row input[type="number"],
+    .judge-admin-row select{
+      width: 100%;
+      box-sizing: border-box;
+    }
+  }
   .status-picker-footer{
     display:flex;
     justify-content:flex-end;
