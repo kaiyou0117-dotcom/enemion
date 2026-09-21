@@ -230,7 +230,7 @@ function openTemplateBuilderModal(baseEffect, onConfirm){
         <div style="padding:16px;">
           <p class="ready-note" style="margin-bottom:12px;">${escapeHtml(baseEffect.text)}</p>
           <label style="font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;">名称（【${escapeHtml(baseName)}:○○】の○○部分）</label>
-          <input type="text" id="template-name-input" placeholder="例：紅蓮" style="width:100%; box-sizing:border-box; margin-bottom:14px;">
+          <input type="text" id="template-name-input" placeholder="任意記入欄" style="width:100%; box-sizing:border-box; margin-bottom:14px;">
           ${slotsHtml}
           <div class="ready-note" id="template-pt-note" style="margin:6px 0 12px;"></div>
           <button type="button" class="seal-btn" id="template-confirm-btn" style="width:100%;" disabled>この内容で追加する</button>
