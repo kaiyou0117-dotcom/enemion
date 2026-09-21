@@ -909,12 +909,14 @@
     white-space: nowrap;
   }
   .foldable-toggle-btn:hover{ background: rgba(201,162,39,0.15); }
-  .log-panel .foldable-toggle-btn{
+  .log-panel .foldable-toggle-btn,
+  .status-panel .foldable-toggle-btn{
     color: #8a6d3a;
     background: var(--paper);
     border-color: #8a6d3a;
   }
-  .log-panel .foldable-toggle-btn:hover{ background: rgba(138,109,58,0.12); }
+  .log-panel .foldable-toggle-btn:hover,
+  .status-panel .foldable-toggle-btn:hover{ background: rgba(138,109,58,0.12); }
   .foldable-content.folded{ display: none; }
 
   .log-list{ max-height: 480px; overflow-y: auto; display:flex; flex-direction:column; gap: 8px; margin-bottom: 14px; font-size: 13px; }
