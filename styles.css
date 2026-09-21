@@ -176,30 +176,44 @@
     .battle-grid{ grid-template-columns: 1fr; }
   }
 
-  /* ---- コンパクト表示モード：狭い画面でもデスクトップ風の2カラムに詰めて表示する ---- */
+  /* ---- コンパクト表示モード：右下のボタンでオン/オフ。スマホを横向きに構えてもらい、
+     画面全体をCSSで90度回転させることでデスクトップ版と同じ横幅（≒2カラム）を確保する ---- */
+  #play-rotate-wrapper.force-landscape-rotate{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vh;
+    height: 100vw;
+    transform-origin: top left;
+    transform: rotate(90deg) translateY(-100%);
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 1;
+    background: var(--bg, #16100d);
+  }
+
   #play-screen.compact-mode .table-columns{
-    grid-template-columns: minmax(0, 1fr) 190px !important;
-    gap: 8px !important;
+    grid-template-columns: minmax(0, 1fr) 260px !important;
+    gap: 14px !important;
   }
   #play-screen.compact-mode .battle-grid{
     grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
-    gap: 8px !important;
+    gap: 14px !important;
   }
-  #play-screen.compact-mode .table-side{ position: sticky !important; top: 4px !important; }
+  #play-screen.compact-mode .table-side{ position: sticky !important; top: 6px !important; }
   #play-screen.compact-mode .wrap{
     width: 100%;
-    padding: 6px 4px 60px;
-    font-size: 10px;
-    zoom: 0.62; /* 対応ブラウザでは、これ単体で全体をさらに縮小する（未対応でも下の個別指定で縮小済み） */
+    padding: 10px 8px 50px;
+    font-size: 12px;
   }
-  #play-screen.compact-mode h2{ font-size: 13px; }
-  #play-screen.compact-mode h3{ font-size: 10px; margin-bottom: 4px; }
-  #play-screen.compact-mode .ready-note{ font-size: 8px; }
-  #play-screen.compact-mode .wrap-head{ padding-bottom: 5px; margin-bottom: 6px; }
-  #play-screen.compact-mode .room-code{ font-size: 10px; }
-  #play-screen.compact-mode .you-badge{ font-size: 9px; }
-  #play-screen.compact-mode .members{ gap: 4px; margin-bottom: 6px; }
-  #play-screen.compact-mode .member-card{ padding: 3px 5px; font-size: 8px; }
+  #play-screen.compact-mode h2{ font-size: 16px; }
+  #play-screen.compact-mode h3{ font-size: 12px; margin-bottom: 5px; }
+  #play-screen.compact-mode .ready-note{ font-size: 10px; }
+  #play-screen.compact-mode .wrap-head{ padding-bottom: 6px; margin-bottom: 8px; }
+  #play-screen.compact-mode .room-code{ font-size: 11px; }
+  #play-screen.compact-mode .you-badge{ font-size: 10px; }
+  #play-screen.compact-mode .members{ gap: 5px; margin-bottom: 8px; }
+  #play-screen.compact-mode .member-card{ padding: 4px 6px; font-size: 10px; }
   #play-screen.compact-mode .hand-section,
   #play-screen.compact-mode .judge-panel,
   #play-screen.compact-mode .log-panel,
@@ -210,37 +224,37 @@
   #play-screen.compact-mode #teleport-decide-panel,
   #play-screen.compact-mode #judge-admin-panel,
   #play-screen.compact-mode #judge-memo-panel{
-    padding: 5px;
-    margin-bottom: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
   }
-  #play-screen.compact-mode .hand-cards{ gap: 4px; }
-  #play-screen.compact-mode .hand-card{ padding: 3px 4px; font-size: 8px; }
-  #play-screen.compact-mode .reveal-board{ gap: 5px; }
-  #play-screen.compact-mode .reveal-card{ padding: 5px; font-size: 8px; }
-  #play-screen.compact-mode .effect-chip{ padding: 3px 4px; margin-bottom: 3px; }
-  #play-screen.compact-mode .ec-name{ font-size: 9px; }
-  #play-screen.compact-mode .ec-text{ font-size: 8px; }
-  #play-screen.compact-mode .log-item{ font-size: 8px; padding-bottom: 3px; }
-  #play-screen.compact-mode .log-meta{ font-size: 8px; }
-  #play-screen.compact-mode .judge-admin-card-row{ padding: 3px 4px; }
-  #play-screen.compact-mode .card-effect-badge{ font-size: 8px; padding: 1px 4px; }
-  #play-screen.compact-mode .picker-card{ padding: 4px 5px; }
-  #play-screen.compact-mode .side-name{ font-size: 10px; }
+  #play-screen.compact-mode .hand-cards{ gap: 5px; }
+  #play-screen.compact-mode .hand-card{ padding: 4px 5px; font-size: 10px; }
+  #play-screen.compact-mode .reveal-board{ gap: 6px; }
+  #play-screen.compact-mode .reveal-card{ padding: 6px; font-size: 10px; }
+  #play-screen.compact-mode .effect-chip{ padding: 4px 5px; margin-bottom: 4px; }
+  #play-screen.compact-mode .ec-name{ font-size: 10px; }
+  #play-screen.compact-mode .ec-text{ font-size: 9px; }
+  #play-screen.compact-mode .log-item{ font-size: 10px; padding-bottom: 4px; }
+  #play-screen.compact-mode .log-meta{ font-size: 10px; }
+  #play-screen.compact-mode .judge-admin-card-row{ padding: 4px 5px; }
+  #play-screen.compact-mode .card-effect-badge{ font-size: 9px; padding: 1px 5px; }
+  #play-screen.compact-mode .picker-card{ padding: 5px 6px; }
+  #play-screen.compact-mode .side-name{ font-size: 11px; }
   #play-screen.compact-mode .pips{ gap: 2px; }
-  #play-screen.compact-mode .ee-bar{ font-size: 9px; }
-  #play-screen.compact-mode .status-chip{ font-size: 8px; padding: 3px 5px; }
+  #play-screen.compact-mode .ee-bar{ font-size: 10px; }
+  #play-screen.compact-mode .status-chip{ font-size: 9px; padding: 3px 6px; }
   #play-screen.compact-mode input[type="text"],
   #play-screen.compact-mode input[type="number"],
   #play-screen.compact-mode select,
   #play-screen.compact-mode textarea{
-    font-size: 9px;
-    padding: 3px 5px;
-    margin-bottom: 4px;
+    font-size: 11px;
+    padding: 4px 6px;
+    margin-bottom: 5px;
   }
-  #play-screen.compact-mode button{ font-size: 9px; padding: 3px 7px; }
-  #play-screen.compact-mode .judge-admin-row{ gap: 4px; margin-bottom: 4px; }
-  #play-screen.compact-mode .dice-area{ gap: 4px; }
-  #play-screen.compact-mode .dice-face{ width: 26px; height: 26px; font-size: 12px; }
+  #play-screen.compact-mode button{ font-size: 11px; padding: 4px 9px; }
+  #play-screen.compact-mode .judge-admin-row{ gap: 5px; margin-bottom: 5px; }
+  #play-screen.compact-mode .dice-area{ gap: 5px; }
+  #play-screen.compact-mode .dice-face{ width: 30px; height: 30px; font-size: 13px; }
 
   .compact-toggle-btn{
     position: fixed;

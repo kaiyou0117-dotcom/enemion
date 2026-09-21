@@ -69,6 +69,7 @@
   <!-- プレイ画面 -->
   <div id="play-screen" class="screen hidden">
     <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">⊞</button>
+    <div id="play-rotate-wrapper">
     <div class="wrap wrap-wide">
       <div class="wrap-head">
         <h2>対戦卓</h2>
@@ -340,6 +341,7 @@
 
       <div class="leave-link" id="btn-leave-play">卓を離れる</div>
     </div>
+    </div>
   </div>
 
 <script type="module">
@@ -364,17 +366,27 @@
   const btnEnter = document.getElementById('btn-enter');
   const roleButtons = document.querySelectorAll('.role-btn');
 
-  // ---- コンパクト表示モード（右下のボタンで切り替え。狭い画面でもデスクトップ風の2カラムに詰めて表示する） ----
+  // ---- コンパクト表示モード（右下のボタンで切り替え）----
+  // スマホを横向きに構えてもらい、画面全体をCSSで回転させることでデスクトップ版と同じ横幅（≒2カラム）を確保する
   const btnToggleCompact = document.getElementById('btn-toggle-compact');
+  const playRotateWrapper = document.getElementById('play-rotate-wrapper');
+  const portraitQuery = window.matchMedia('(orientation: portrait)');
+  function updateForceLandscape(){
+    const isCompact = playScreen.classList.contains('compact-mode');
+    playRotateWrapper.classList.toggle('force-landscape-rotate', isCompact && portraitQuery.matches);
+  }
   function applyCompactMode(on){
     playScreen.classList.toggle('compact-mode', on);
     btnToggleCompact.textContent = on ? '⊟' : '⊞';
-    btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（一画面に詰めて表示）';
+    btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（スマホは横向きに構えてください）';
     try{ localStorage.setItem('enemion-compact-mode', on ? '1' : '0'); } catch(e){}
+    updateForceLandscape();
   }
   btnToggleCompact.addEventListener('click', () => {
     applyCompactMode(!playScreen.classList.contains('compact-mode'));
   });
+  if(portraitQuery.addEventListener){ portraitQuery.addEventListener('change', updateForceLandscape); }
+  window.addEventListener('resize', updateForceLandscape);
   let initialCompactMode = false;
   try{ initialCompactMode = localStorage.getItem('enemion-compact-mode') === '1'; } catch(e){}
   applyCompactMode(initialCompactMode);
