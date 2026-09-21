@@ -178,25 +178,28 @@
 
   /* ---- コンパクト表示モード：狭い画面でもデスクトップ風の2カラムに詰めて表示する ---- */
   #play-screen.compact-mode .table-columns{
-    grid-template-columns: minmax(0, 1fr) 220px !important;
-    gap: 10px !important;
+    grid-template-columns: minmax(0, 1fr) 190px !important;
+    gap: 8px !important;
   }
   #play-screen.compact-mode .battle-grid{
     grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
-    gap: 10px !important;
+    gap: 8px !important;
   }
-  #play-screen.compact-mode .table-side{ position: sticky !important; top: 8px !important; }
+  #play-screen.compact-mode .table-side{ position: sticky !important; top: 4px !important; }
   #play-screen.compact-mode .wrap{
     width: 100%;
-    padding: 10px 6px 70px;
-    font-size: 11px;
+    padding: 6px 4px 60px;
+    font-size: 10px;
+    zoom: 0.62; /* 対応ブラウザでは、これ単体で全体をさらに縮小する（未対応でも下の個別指定で縮小済み） */
   }
-  #play-screen.compact-mode h2{ font-size: 16px; }
-  #play-screen.compact-mode h3{ font-size: 12px; margin-bottom: 6px; }
-  #play-screen.compact-mode .ready-note{ font-size: 10px; }
-  #play-screen.compact-mode .wrap-head{ padding-bottom: 8px; margin-bottom: 10px; }
-  #play-screen.compact-mode .members{ gap: 6px; margin-bottom: 10px; }
-  #play-screen.compact-mode .member-card{ padding: 6px 8px; font-size: 10px; }
+  #play-screen.compact-mode h2{ font-size: 13px; }
+  #play-screen.compact-mode h3{ font-size: 10px; margin-bottom: 4px; }
+  #play-screen.compact-mode .ready-note{ font-size: 8px; }
+  #play-screen.compact-mode .wrap-head{ padding-bottom: 5px; margin-bottom: 6px; }
+  #play-screen.compact-mode .room-code{ font-size: 10px; }
+  #play-screen.compact-mode .you-badge{ font-size: 9px; }
+  #play-screen.compact-mode .members{ gap: 4px; margin-bottom: 6px; }
+  #play-screen.compact-mode .member-card{ padding: 3px 5px; font-size: 8px; }
   #play-screen.compact-mode .hand-section,
   #play-screen.compact-mode .judge-panel,
   #play-screen.compact-mode .log-panel,
@@ -207,31 +210,37 @@
   #play-screen.compact-mode #teleport-decide-panel,
   #play-screen.compact-mode #judge-admin-panel,
   #play-screen.compact-mode #judge-memo-panel{
-    padding: 8px;
-    margin-bottom: 10px;
+    padding: 5px;
+    margin-bottom: 6px;
   }
-  #play-screen.compact-mode .hand-cards{ gap: 6px; }
-  #play-screen.compact-mode .hand-card{ padding: 5px 6px; font-size: 10px; }
-  #play-screen.compact-mode .reveal-board{ gap: 8px; }
-  #play-screen.compact-mode .reveal-card{ padding: 8px; font-size: 10px; }
-  #play-screen.compact-mode .effect-chip{ padding: 5px 6px; margin-bottom: 4px; }
-  #play-screen.compact-mode .ec-text{ font-size: 10px; }
-  #play-screen.compact-mode .log-item{ font-size: 10px; padding-bottom: 4px; }
-  #play-screen.compact-mode .judge-admin-card-row{ padding: 5px 6px; }
-  #play-screen.compact-mode .card-effect-badge{ font-size: 10px; padding: 2px 6px; }
-  #play-screen.compact-mode .picker-card{ padding: 6px 8px; }
+  #play-screen.compact-mode .hand-cards{ gap: 4px; }
+  #play-screen.compact-mode .hand-card{ padding: 3px 4px; font-size: 8px; }
+  #play-screen.compact-mode .reveal-board{ gap: 5px; }
+  #play-screen.compact-mode .reveal-card{ padding: 5px; font-size: 8px; }
+  #play-screen.compact-mode .effect-chip{ padding: 3px 4px; margin-bottom: 3px; }
+  #play-screen.compact-mode .ec-name{ font-size: 9px; }
+  #play-screen.compact-mode .ec-text{ font-size: 8px; }
+  #play-screen.compact-mode .log-item{ font-size: 8px; padding-bottom: 3px; }
+  #play-screen.compact-mode .log-meta{ font-size: 8px; }
+  #play-screen.compact-mode .judge-admin-card-row{ padding: 3px 4px; }
+  #play-screen.compact-mode .card-effect-badge{ font-size: 8px; padding: 1px 4px; }
+  #play-screen.compact-mode .picker-card{ padding: 4px 5px; }
+  #play-screen.compact-mode .side-name{ font-size: 10px; }
+  #play-screen.compact-mode .pips{ gap: 2px; }
+  #play-screen.compact-mode .ee-bar{ font-size: 9px; }
+  #play-screen.compact-mode .status-chip{ font-size: 8px; padding: 3px 5px; }
   #play-screen.compact-mode input[type="text"],
   #play-screen.compact-mode input[type="number"],
   #play-screen.compact-mode select,
   #play-screen.compact-mode textarea{
-    font-size: 11px;
-    padding: 5px 8px;
-    margin-bottom: 6px;
+    font-size: 9px;
+    padding: 3px 5px;
+    margin-bottom: 4px;
   }
-  #play-screen.compact-mode button{ font-size: 11px; padding: 5px 10px; }
-  #play-screen.compact-mode .judge-admin-row{ gap: 6px; margin-bottom: 6px; }
-  #play-screen.compact-mode .dice-area{ gap: 6px; }
-  #play-screen.compact-mode .dice-face{ width: 36px; height: 36px; font-size: 16px; }
+  #play-screen.compact-mode button{ font-size: 9px; padding: 3px 7px; }
+  #play-screen.compact-mode .judge-admin-row{ gap: 4px; margin-bottom: 4px; }
+  #play-screen.compact-mode .dice-area{ gap: 4px; }
+  #play-screen.compact-mode .dice-face{ width: 26px; height: 26px; font-size: 12px; }
 
   .compact-toggle-btn{
     position: fixed;
