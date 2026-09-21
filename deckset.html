@@ -38,7 +38,10 @@
       <div id="deckset-list-wrap" class="hidden">
         <div class="you-badge" id="ds-name-badge"></div>
         <div id="deckset-list" style="margin-bottom:20px;"></div>
-        <button class="ghost-btn" id="btn-ds-new">＋ 新しいデッキを作る</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="ghost-btn" id="btn-ds-new">＋ 新しいデッキを作る</button>
+          <button class="ghost-btn" id="btn-ds-export-all">デッキセットを丸ごと書き出す</button>
+        </div>
       </div>
 
       <div id="deckset-editor" class="hidden">
@@ -57,7 +60,7 @@
 <script type="module">
   import {
     db, ref, set, push, get, remove,
-    escapeHtml, sanitizeKey, emptyCards,
+    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
@@ -69,9 +72,62 @@
   let dsEditorEffects = null;
   let dsEditorCustomEffects = {}; // 「異産:○○」等、このデッキで組み立てたカード専用効果の定義
   let dsEditingId = null; // null=新規, それ以外=既存デッキの更新
+  let dsListData = {}; // 直近に取得したデッキセット一覧（書き出し用に保持）
 
   function getDsCardNumberFromDom(idx){
     return idx + 1; // 数字はカード枠に固定
+  }
+
+  // ============ 書き出し機能 ============
+  function formatCardExport(card){
+    const typeLabel = TYPE_LABEL[card.type] || card.type;
+    const effectsText = (card.effectNames || []).map(n => {
+      const e = effectByName(n);
+      if(!e) return `【${n}】（不明な効果）`;
+      return `【${e.name}】（${e.text}）${e.pt}pt`;
+    }).join('\n');
+    return `「${card.name || '無題'}」\n数字:（${card.number}）\n種族:（${card.species || ''}）\nタイプ:（${typeLabel}）\n効果:\n${effectsText}\n説明:（${card.flavor || ''}）`;
+  }
+
+  function openExportModal(title, text){
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(560px,100%);">
+        <div class="picker-header">
+          <span>${escapeHtml(title)}</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div style="padding:16px;">
+          <textarea id="export-text-area" readonly style="width:100%; box-sizing:border-box; min-height:320px; font-family:var(--font-mono); font-size:12px; white-space:pre-wrap;"></textarea>
+          <div class="phase-actions" style="margin-top:10px;">
+            <button type="button" class="ghost-btn" id="export-copy-btn">コピーする</button>
+            <span class="ready-note" id="export-copy-note"></span>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const textarea = overlay.querySelector('#export-text-area');
+    textarea.value = text;
+    function close(){ overlay.remove(); document.removeEventListener('keydown', onKeydown); }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+    overlay.querySelector('#export-copy-btn').addEventListener('click', async () => {
+      const note = overlay.querySelector('#export-copy-note');
+      try{
+        await navigator.clipboard.writeText(text);
+        note.textContent = 'コピーしました。';
+      } catch(err){
+        textarea.focus();
+        textarea.select();
+        note.textContent = '自動コピーができなかったため、テキストを選択状態にしました。手動でコピーしてください。';
+      }
+    });
+    textarea.focus();
+    textarea.select();
   }
 
   document.getElementById('btn-ds-load').addEventListener('click', async () => {
@@ -91,6 +147,7 @@
     try{
       const snap = await get(ref(db, `deckSets/${dsNameKey}/decks`));
       const data = snap.exists() ? snap.val() : {};
+      dsListData = data;
       Object.values(data).forEach(deck => registerCustomEffects(deck.customEffects));
       const entries = Object.entries(data);
       if(entries.length === 0){
@@ -106,8 +163,9 @@
         div.innerHTML = `
           <div class="role-label">${escapeHtml(deck.label || '無題のデッキ')}</div>
           <div class="member-name">${escapeHtml(cardNames)}</div>
-          <div style="margin-top:8px; display:flex; gap:8px;">
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
             <button type="button" class="ghost-btn" data-ds-edit="${id}">編集</button>
+            <button type="button" class="ghost-btn" data-ds-duplicate="${id}">複製</button>
             <button type="button" class="ghost-btn" data-ds-delete="${id}">削除</button>
           </div>
         `;
@@ -115,6 +173,22 @@
       });
       listEl.querySelectorAll('[data-ds-edit]').forEach(btn => {
         btn.addEventListener('click', () => openDsEditor(btn.dataset.dsEdit, data[btn.dataset.dsEdit]));
+      });
+      listEl.querySelectorAll('[data-ds-duplicate]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const source = data[btn.dataset.dsDuplicate];
+          if(!source) return;
+          const baseLabel = (source.label || '無題のデッキ').replace(/\(\d+\)$/, '');
+          const existingLabels = new Set(Object.values(data).map(d => d.label || ''));
+          let n = 1;
+          let newLabel = `${baseLabel}(${n})`;
+          while(existingLabels.has(newLabel)){ n += 1; newLabel = `${baseLabel}(${n})`; }
+          const copy = JSON.parse(JSON.stringify(source));
+          copy.label = newLabel;
+          copy.savedAt = Date.now();
+          await push(ref(db, `deckSets/${dsNameKey}/decks`), copy);
+          await refreshDecksetList();
+        });
       });
       listEl.querySelectorAll('[data-ds-delete]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -131,6 +205,17 @@
   }
 
   document.getElementById('btn-ds-new').addEventListener('click', () => openDsEditor(null, null));
+
+  document.getElementById('btn-ds-export-all').addEventListener('click', () => {
+    const decks = Object.values(dsListData);
+    if(decks.length === 0){ alert('書き出せるデッキがありません。'); return; }
+    const text = decks.map(deck => {
+      const deckTitle = `# ${deck.label || '無題のデッキ'}`;
+      const cardsText = (deck.cards || []).map(formatCardExport).join('\n\n');
+      return `${deckTitle}\n\n${cardsText}`;
+    }).join('\n\n\n');
+    openExportModal(`「${dsNameRaw}」のデッキセットを丸ごと書き出し`, text);
+  });
 
   function openDsEditor(id, deck){
     dsEditingId = id;
@@ -168,6 +253,28 @@
         dsEditorCards[idx].image = dataUrl;
         renderDsEditor();
       }
+    });
+
+    // カード単体の書き出しボタンを、各カードフォームの末尾に追加する
+    grid.querySelectorAll('.card-form').forEach((formEl, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost-btn';
+      btn.style.marginTop = '8px';
+      btn.textContent = 'このカードを書き出す';
+      btn.addEventListener('click', () => {
+        const get2 = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
+        const card = {
+          name: get2('name').trim(),
+          number: idx + 1,
+          species: get2('species'),
+          type: get2('type'),
+          effectNames: (dsEditorEffects[idx] || []).slice(),
+          flavor: get2('flavor')
+        };
+        openExportModal(`「${card.name || '無題'}」を書き出し`, formatCardExport(card));
+      });
+      formEl.appendChild(btn);
     });
   }
 
