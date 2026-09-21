@@ -175,6 +175,83 @@
     .table-side{ position: static; }
     .battle-grid{ grid-template-columns: 1fr; }
   }
+
+  /* ---- コンパクト表示モード：狭い画面でもデスクトップ風の2カラムに詰めて表示する ---- */
+  #play-screen.compact-mode .table-columns{
+    grid-template-columns: minmax(0, 1fr) 220px !important;
+    gap: 10px !important;
+  }
+  #play-screen.compact-mode .battle-grid{
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
+    gap: 10px !important;
+  }
+  #play-screen.compact-mode .table-side{ position: sticky !important; top: 8px !important; }
+  #play-screen.compact-mode .wrap{
+    width: 100%;
+    padding: 10px 6px 70px;
+    font-size: 11px;
+  }
+  #play-screen.compact-mode h2{ font-size: 16px; }
+  #play-screen.compact-mode h3{ font-size: 12px; margin-bottom: 6px; }
+  #play-screen.compact-mode .ready-note{ font-size: 10px; }
+  #play-screen.compact-mode .wrap-head{ padding-bottom: 8px; margin-bottom: 10px; }
+  #play-screen.compact-mode .members{ gap: 6px; margin-bottom: 10px; }
+  #play-screen.compact-mode .member-card{ padding: 6px 8px; font-size: 10px; }
+  #play-screen.compact-mode .hand-section,
+  #play-screen.compact-mode .judge-panel,
+  #play-screen.compact-mode .log-panel,
+  #play-screen.compact-mode .status-panel,
+  #play-screen.compact-mode #skill-activation-panel,
+  #play-screen.compact-mode #initiative-panel,
+  #play-screen.compact-mode #dice-off-panel,
+  #play-screen.compact-mode #teleport-decide-panel,
+  #play-screen.compact-mode #judge-admin-panel,
+  #play-screen.compact-mode #judge-memo-panel{
+    padding: 8px;
+    margin-bottom: 10px;
+  }
+  #play-screen.compact-mode .hand-cards{ gap: 6px; }
+  #play-screen.compact-mode .hand-card{ padding: 5px 6px; font-size: 10px; }
+  #play-screen.compact-mode .reveal-board{ gap: 8px; }
+  #play-screen.compact-mode .reveal-card{ padding: 8px; font-size: 10px; }
+  #play-screen.compact-mode .effect-chip{ padding: 5px 6px; margin-bottom: 4px; }
+  #play-screen.compact-mode .ec-text{ font-size: 10px; }
+  #play-screen.compact-mode .log-item{ font-size: 10px; padding-bottom: 4px; }
+  #play-screen.compact-mode .judge-admin-card-row{ padding: 5px 6px; }
+  #play-screen.compact-mode .card-effect-badge{ font-size: 10px; padding: 2px 6px; }
+  #play-screen.compact-mode .picker-card{ padding: 6px 8px; }
+  #play-screen.compact-mode input[type="text"],
+  #play-screen.compact-mode input[type="number"],
+  #play-screen.compact-mode select,
+  #play-screen.compact-mode textarea{
+    font-size: 11px;
+    padding: 5px 8px;
+    margin-bottom: 6px;
+  }
+  #play-screen.compact-mode button{ font-size: 11px; padding: 5px 10px; }
+  #play-screen.compact-mode .judge-admin-row{ gap: 6px; margin-bottom: 6px; }
+  #play-screen.compact-mode .dice-area{ gap: 6px; }
+  #play-screen.compact-mode .dice-face{ width: 36px; height: 36px; font-size: 16px; }
+
+  .compact-toggle-btn{
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 950;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--red);
+    color: var(--paper);
+    border: 1px solid var(--gold);
+    font-size: 20px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .compact-toggle-btn:active{ transform: scale(0.94); }
   .wrap-head{
     display:flex;
     align-items:baseline;
