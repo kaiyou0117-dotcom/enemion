@@ -68,7 +68,7 @@
 
   <!-- プレイ画面 -->
   <div id="play-screen" class="screen hidden">
-    <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">⊞</button>
+    <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">縦画面</button>
     <div id="play-rotate-wrapper">
     <div class="wrap wrap-wide">
       <div class="wrap-head">
@@ -380,7 +380,7 @@
   }
   function applyCompactMode(on){
     playScreen.classList.toggle('compact-mode', on);
-    btnToggleCompact.textContent = on ? '⊟' : '⊞';
+    btnToggleCompact.textContent = on ? '横画面' : '縦画面';
     btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（スマホは横向きに構えてください）';
     try{ localStorage.setItem('enemion-compact-mode', on ? '1' : '0'); } catch(e){}
     updateForceLandscape();
@@ -491,9 +491,10 @@
     toMove.forEach(n => contentWrap.appendChild(n));
     panelEl.appendChild(contentWrap);
 
-    const arrow = document.createElement('span');
-    arrow.className = 'foldable-arrow';
-    header.appendChild(arrow);
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'foldable-toggle-btn';
+    header.appendChild(toggleBtn);
     header.classList.add('foldable-header');
 
     let open = defaultOpen;
@@ -505,10 +506,10 @@
     function setOpen(v){
       open = v;
       contentWrap.classList.toggle('folded', !open);
-      arrow.textContent = open ? '▾' : '▸';
+      toggleBtn.textContent = open ? '折り畳む' : '開く';
       try{ localStorage.setItem(storageKey, open ? '1' : '0'); } catch(e){}
     }
-    header.addEventListener('click', () => setOpen(!open));
+    toggleBtn.addEventListener('click', () => setOpen(!open));
     setOpen(open);
   }
 
