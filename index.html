@@ -1061,6 +1061,7 @@
       skillDone: { player1: false, player2: false },
       diceOff: null,
       diceOffPending: false,
+      eeDeducted: false,
       winner: null
     });
     await push(ref(db, `rooms/${roomId}/log`), { from:'卓', role:'system', text:'両者の準備が整い、対戦を開始します。', ts: Date.now() });
@@ -1403,6 +1404,9 @@
     const p1Pick = latestBattle.picks.player1;
     const p2Pick = latestBattle.picks.player2;
     if(!(p1Pick && p1Pick.locked && p2Pick && p2Pick.locked)) return;
+    // 消費済みかどうかはFirebase側（全員共有）の状態で判定する。ブラウザ内メモリだけの印だと、
+    // カードが場に出た後で誰かがリロードした際に印が消え、EEが二重に引かれてしまうため。
+    if(latestBattle.eeDeducted) return;
     if(eeDeductedForTurn === latestBattle.turn) return;
     eeDeductedForTurn = latestBattle.turn;
 
@@ -1410,9 +1414,9 @@
       const p1Cost = Math.max(0, getEffectiveNumber('player1', p1Pick.cardIndex) - (p1Pick.fourCountReduction || 0));
       const p2Cost = Math.max(0, getEffectiveNumber('player2', p2Pick.cardIndex) - (p2Pick.fourCountReduction || 0));
       const currentEe = latestBattle.ee || { player1: 2, player2: 2 };
-      update(ref(db, `rooms/${roomId}/battle/ee`), {
-        player1: currentEe.player1 - p1Cost,
-        player2: currentEe.player2 - p2Cost
+      update(ref(db, `rooms/${roomId}/battle`), {
+        ee: { player1: currentEe.player1 - p1Cost, player2: currentEe.player2 - p2Cost },
+        eeDeducted: true
       }).catch(() => { if(eeDeductedForTurn === latestBattle.turn) eeDeductedForTurn = null; });
     } catch(err){
       // 想定外のエラーで固まらないよう、印を戻して次回の再描画で再試行できるようにする
@@ -2123,6 +2127,7 @@
     updates['battle/skillDone'] = { player1: false, player2: false };
     updates['battle/diceOff'] = null;
     updates['battle/diceOffPending'] = false;
+    updates['battle/eeDeducted'] = false;
     updates['battle/undoSnapshot'] = snapshotBeforeThisRound;
 
     if(finished){
@@ -2243,6 +2248,7 @@
       skillDone:{player1:false, player2:false},
       diceOff:null,
       diceOffPending:false,
+      eeDeducted:false,
       winner:null
     };
     await update(ref(db, `rooms/${roomId}`), updates);
