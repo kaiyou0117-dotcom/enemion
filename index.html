@@ -68,6 +68,7 @@
 
   <!-- プレイ画面 -->
   <div id="play-screen" class="screen hidden">
+    <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">⊞</button>
     <div class="wrap wrap-wide">
       <div class="wrap-head">
         <h2>対戦卓</h2>
@@ -362,6 +363,21 @@
   const entryError = document.getElementById('entry-error');
   const btnEnter = document.getElementById('btn-enter');
   const roleButtons = document.querySelectorAll('.role-btn');
+
+  // ---- コンパクト表示モード（右下のボタンで切り替え。狭い画面でもデスクトップ風の2カラムに詰めて表示する） ----
+  const btnToggleCompact = document.getElementById('btn-toggle-compact');
+  function applyCompactMode(on){
+    playScreen.classList.toggle('compact-mode', on);
+    btnToggleCompact.textContent = on ? '⊟' : '⊞';
+    btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（一画面に詰めて表示）';
+    try{ localStorage.setItem('enemion-compact-mode', on ? '1' : '0'); } catch(e){}
+  }
+  btnToggleCompact.addEventListener('click', () => {
+    applyCompactMode(!playScreen.classList.contains('compact-mode'));
+  });
+  let initialCompactMode = false;
+  try{ initialCompactMode = localStorage.getItem('enemion-compact-mode') === '1'; } catch(e){}
+  applyCompactMode(initialCompactMode);
 
   // ---- 状態 ----
   let roomId = null;
