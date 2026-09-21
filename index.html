@@ -68,8 +68,7 @@
 
   <!-- プレイ画面 -->
   <div id="play-screen" class="screen hidden">
-    <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">縦画面</button>
-    <div id="play-rotate-wrapper">
+    <button type="button" class="compact-toggle-btn" id="btn-toggle-compact" title="表示モードを切り替え">コンパクト表示</button>
     <div class="wrap wrap-wide">
       <div class="wrap-head">
         <h2>対戦卓</h2>
@@ -344,7 +343,6 @@
 
       <div class="leave-link" id="btn-leave-play">卓を離れる</div>
     </div>
-    </div>
   </div>
 
 <script type="module">
@@ -370,69 +368,20 @@
   const roleButtons = document.querySelectorAll('.role-btn');
 
   // ---- コンパクト表示モード（右下のボタンで切り替え）----
-  // 対応環境（主にAndroidのChrome等）では、フルスクリーン化＋画面の向きロックAPIで実際に端末の向きを回転させる。
-  // 非対応環境（iOS Safari等。仕様上、動画の全画面再生以外ではこの制御自体が許可されていない）では、
-  // 画面全体をCSSで見た目だけ回転させ、スマホを横向きに構えてもらう形にフォールバックする。
+  // デスクトップ版に近い詰めたレイアウトに切り替えるだけのボタン。画面の回転そのものは使う人に委ねる。
   const btnToggleCompact = document.getElementById('btn-toggle-compact');
-  const playRotateWrapper = document.getElementById('play-rotate-wrapper');
-  const portraitQuery = window.matchMedia('(orientation: portrait)');
-
-  function updateForceLandscape(){
-    const isCompact = playScreen.classList.contains('compact-mode');
-    playRotateWrapper.classList.toggle('force-landscape-rotate', isCompact && portraitQuery.matches);
-  }
-
-  async function tryRealLandscapeLock(){
-    try{
-      if(!document.fullscreenElement && document.documentElement.requestFullscreen){
-        await document.documentElement.requestFullscreen();
-      }
-      if(screen.orientation && screen.orientation.lock){
-        await screen.orientation.lock('landscape');
-        return true;
-      }
-    } catch(err){
-      // 非対応・拒否された場合はCSSでの見た目回転にフォールバックする
-    }
-    return false;
-  }
-  async function releaseRealLandscapeLock(){
-    try{ if(screen.orientation && screen.orientation.unlock){ screen.orientation.unlock(); } } catch(e){}
-    try{ if(document.fullscreenElement){ await document.exitFullscreen(); } } catch(e){}
-  }
-  document.addEventListener('fullscreenchange', () => {
-    // 端末の戻る操作などで予期せずフルスクリーンが解除された場合、CSSでの見た目回転に引き継ぐ
-    if(!document.fullscreenElement && playScreen.classList.contains('compact-mode')){
-      updateForceLandscape();
-    }
-  });
-
-  async function applyCompactMode(on, userGesture){
+  function applyCompactMode(on){
     playScreen.classList.toggle('compact-mode', on);
-    btnToggleCompact.textContent = on ? '横画面' : '縦画面';
-    btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（スマホは横向きに構えてください）';
+    btnToggleCompact.textContent = on ? '通常表示' : 'コンパクト表示';
+    btnToggleCompact.title = on ? '通常の表示に戻す' : 'コンパクト表示にする（横向きだとより見やすくなります）';
     try{ localStorage.setItem('enemion-compact-mode', on ? '1' : '0'); } catch(e){}
-
-    if(on && userGesture){
-      const realLockOk = await tryRealLandscapeLock();
-      if(realLockOk){
-        playRotateWrapper.classList.remove('force-landscape-rotate');
-        return;
-      }
-    }
-    if(!on){
-      releaseRealLandscapeLock();
-    }
-    updateForceLandscape();
   }
   btnToggleCompact.addEventListener('click', () => {
-    applyCompactMode(!playScreen.classList.contains('compact-mode'), true);
+    applyCompactMode(!playScreen.classList.contains('compact-mode'));
   });
-  if(portraitQuery.addEventListener){ portraitQuery.addEventListener('change', updateForceLandscape); }
-  window.addEventListener('resize', updateForceLandscape);
   let initialCompactMode = false;
   try{ initialCompactMode = localStorage.getItem('enemion-compact-mode') === '1'; } catch(e){}
-  applyCompactMode(initialCompactMode, false);
+  applyCompactMode(initialCompactMode);
 
   // ---- 状態 ----
   let roomId = null;

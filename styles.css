@@ -176,22 +176,7 @@
     .battle-grid{ grid-template-columns: 1fr; }
   }
 
-  /* ---- コンパクト表示モード：右下のボタンでオン/オフ。スマホを横向きに構えてもらい、
-     画面全体をCSSで90度回転させることでデスクトップ版と同じ横幅（≒2カラム）を確保する ---- */
-  #play-rotate-wrapper.force-landscape-rotate{
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vh;
-    height: 100vw;
-    transform-origin: top left;
-    transform: rotate(90deg) translateY(-100%);
-    overflow-y: auto;
-    overflow-x: hidden;
-    z-index: 1;
-    background: var(--bg, #16100d);
-  }
-
+  /* ---- コンパクト表示モード：右下のボタンでオン/オフ。デスクトップ版に近い詰めた2カラムレイアウトにする ---- */
   #play-screen.compact-mode .table-columns{
     grid-template-columns: minmax(0, 1fr) 260px !important;
     gap: 14px !important;
@@ -261,13 +246,13 @@
     right: 16px;
     bottom: 16px;
     z-index: 950;
-    width: 64px;
-    height: 64px;
+    width: 72px;
+    height: 72px;
     border-radius: 8px;
     background: var(--red);
     color: var(--paper);
     border: 1px solid var(--gold);
-    font-size: 13px;
+    font-size: 11px;
     font-family: var(--font-display);
     line-height: 1.3;
     box-shadow: 0 8px 24px rgba(0,0,0,0.45);
