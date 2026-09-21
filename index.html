@@ -352,7 +352,7 @@
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
     sanitizeKey, escapeHtml, emptyDeck, emptyCards, effectByName,
     ptGroupLabel, buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide, typeAdvantage, showFatalError,
+    addEffectGeneric, validateDeckWide, typeAdvantage, registerCustomEffects, showFatalError,
     syncCardFieldsFromDom, resizeImageToDataUrl
   } from './shared.js';
 
@@ -570,6 +570,8 @@
 
     onValue(ref(db, `rooms/${roomId}/decks`), (snap) => {
       latestDecks = snap.val() || {};
+      registerCustomEffects(latestDecks.player1 && latestDecks.player1.customEffects);
+      registerCustomEffects(latestDecks.player2 && latestDecks.player2.customEffects);
       renderBuildPhase();
       renderOpponentReadyNote();
     });
@@ -819,6 +821,7 @@
   // ============ 編成フェーズ（共通ロジック） ============
   // ---- 部屋内の編成フェーズ ----
   let pendingEffects = null; // [[名前,...], ...] 4枚分。ローカル編集用の作業コピー
+  let pendingCustomEffects = {}; // 「異産:○○」等、このデッキで組み立てたカード専用効果の定義
   let deckUnsaved = true; // 「デッキを保存」を押すまでは準備完了にできない
 
   const STATUS_NAME_PRESETS = [
@@ -881,13 +884,14 @@
 
     if(!pendingEffects){
       pendingEffects = myDeck.cards.map(c => (c.effectNames || []).slice());
+      pendingCustomEffects = { ...(myDeck.customEffects || {}) };
       deckUnsaved = false; // サーバーから読み込んだ直後は「保存済み」と同じ状態
     }
 
     syncCardFieldsFromDom(grid, myDeck.cards);
 
     renderCardGrid(grid, myDeck.cards, pendingEffects, isReady, {
-      onAddEffect: (idx, name) => addEffectToCard(idx, name),
+      onAddEffect: (idx, name, customDef) => addEffectToCard(idx, name, customDef),
       onRemoveEffect: (idx, name) => {
         pendingEffects[idx] = pendingEffects[idx].filter(n => n !== name);
         deckUnsaved = true;
@@ -905,10 +909,11 @@
     document.getElementById('btn-deck-ready').disabled = !isReady && deckUnsaved;
   }
 
-  function addEffectToCard(idx, name){
+  function addEffectToCard(idx, name, customDef){
     const deckErr = document.getElementById('deck-error');
     const cardNumber = idx + 1; // 数字はカード枠に固定
     if(addEffectGeneric(pendingEffects, idx, name, cardNumber, deckErr)){
+      if(customDef){ pendingCustomEffects[name] = customDef; }
       deckUnsaved = true;
       renderBuildPhase();
     }
@@ -934,6 +939,7 @@
     try{
       const snap = await get(ref(db, `deckSets/${nameKey}/decks`));
       const data = snap.exists() ? snap.val() : {};
+      Object.values(data).forEach(deck => registerCustomEffects(deck.customEffects));
       const entries = Object.entries(data);
       if(entries.length === 0){
         listEl.innerHTML = '<p class="ready-note">この名前で保存されたデッキが見つかりません。</p>';
@@ -967,6 +973,8 @@
     latestDecks[myRole] = latestDecks[myRole] || emptyDeck();
     latestDecks[myRole].cards = JSON.parse(JSON.stringify(deck.cards));
     pendingEffects = deck.cards.map(c => (c.effectNames||[]).slice());
+    pendingCustomEffects = { ...(deck.customEffects || {}) };
+    registerCustomEffects(deck.customEffects);
     deckUnsaved = true;
     document.getElementById('load-deckset-panel').classList.add('hidden');
     document.getElementById('deck-error').textContent = 'デッキセットから読み込みました。内容を確認して「デッキを保存」を押してください。';
@@ -998,7 +1006,13 @@
     const wideError = validateDeckWide(cards);
     if(wideError){ deckErr.textContent = wideError; return; }
 
-    await set(ref(db, `rooms/${roomId}/decks/${myRole}`), { ready:false, cards });
+    // 実際にカードで使われているカスタム効果だけを保存対象にする（外された分は残さない）
+    const usedNames = new Set();
+    cards.forEach(c => (c.effectNames || []).forEach(n => usedNames.add(n)));
+    const customEffects = {};
+    Object.keys(pendingCustomEffects).forEach(n => { if(usedNames.has(n)) customEffects[n] = pendingCustomEffects[n]; });
+
+    await set(ref(db, `rooms/${roomId}/decks/${myRole}`), { ready:false, cards, customEffects });
     deckErr.textContent = 'デッキを保存しました。';
     deckUnsaved = false;
     renderBuildPhase();

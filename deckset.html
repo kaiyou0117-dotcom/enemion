@@ -59,7 +59,7 @@
     db, ref, set, push, get, remove,
     escapeHtml, sanitizeKey, emptyCards,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide, syncCardFieldsFromDom
+    addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
 
   // ============ デッキセット機能 ============
@@ -67,6 +67,7 @@
   let dsNameRaw = null;
   let dsEditorCards = null;
   let dsEditorEffects = null;
+  let dsEditorCustomEffects = {}; // 「異産:○○」等、このデッキで組み立てたカード専用効果の定義
   let dsEditingId = null; // null=新規, それ以外=既存デッキの更新
 
   function getDsCardNumberFromDom(idx){
@@ -90,6 +91,7 @@
     try{
       const snap = await get(ref(db, `deckSets/${dsNameKey}/decks`));
       const data = snap.exists() ? snap.val() : {};
+      Object.values(data).forEach(deck => registerCustomEffects(deck.customEffects));
       const entries = Object.entries(data);
       if(entries.length === 0){
         listEl.innerHTML = '<p class="ready-note">まだ保存されたデッキがありません。</p>';
@@ -134,6 +136,7 @@
     dsEditingId = id;
     dsEditorCards = deck ? JSON.parse(JSON.stringify(deck.cards)) : emptyCards();
     dsEditorEffects = dsEditorCards.map(c => (c.effectNames||[]).slice());
+    dsEditorCustomEffects = deck ? { ...(deck.customEffects || {}) } : {};
     document.getElementById('input-ds-label').value = deck ? (deck.label||'') : '';
     document.getElementById('deckset-error').textContent = '';
     document.getElementById('deckset-list-wrap').classList.add('hidden');
@@ -149,10 +152,13 @@
     const grid = document.getElementById('deckset-grid');
     syncCardFieldsFromDom(grid, dsEditorCards);
     renderCardGrid(grid, dsEditorCards, dsEditorEffects, false, {
-      onAddEffect: (idx, name) => {
+      onAddEffect: (idx, name, customDef) => {
         const err = document.getElementById('deckset-error');
         const cardNumber = getDsCardNumberFromDom(idx);
-        if(addEffectGeneric(dsEditorEffects, idx, name, cardNumber, err)){ renderDsEditor(); }
+        if(addEffectGeneric(dsEditorEffects, idx, name, cardNumber, err)){
+          if(customDef){ dsEditorCustomEffects[name] = customDef; }
+          renderDsEditor();
+        }
       },
       onRemoveEffect: (idx, name) => {
         dsEditorEffects[idx] = dsEditorEffects[idx].filter(n => n !== name);
@@ -194,7 +200,13 @@
     const wideError = validateDeckWide(cards);
     if(wideError){ err.textContent = wideError; return; }
 
-    const deckData = { label, cards, savedAt: Date.now() };
+    // 実際にカードで使われているカスタム効果だけを保存対象にする（外された分は残さない）
+    const usedNames = new Set();
+    cards.forEach(c => (c.effectNames || []).forEach(n => usedNames.add(n)));
+    const customEffects = {};
+    Object.keys(dsEditorCustomEffects).forEach(n => { if(usedNames.has(n)) customEffects[n] = dsEditorCustomEffects[n]; });
+
+    const deckData = { label, cards, customEffects, savedAt: Date.now() };
     if(dsEditingId){
       await set(ref(db, `deckSets/${dsNameKey}/decks/${dsEditingId}`), deckData);
     } else {

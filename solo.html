@@ -261,7 +261,7 @@
     db, ref, get,
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
     sanitizeKey, escapeHtml, effectByName, emptyCards,
-    addEffectGeneric, typeAdvantage, renderCardGrid,
+    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects,
     validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
 
@@ -392,6 +392,7 @@
     try{
       const snap = await get(ref(db, `deckSets/${nameKey}/decks`));
       const data = snap.exists() ? snap.val() : {};
+      Object.values(data).forEach(deck => registerCustomEffects(deck.customEffects));
       const entries = Object.entries(data);
       if(entries.length === 0){
         listEl.innerHTML = '<p class="ready-note">この名前で保存されたデッキが見つかりません。先に「デッキセット」ページでデッキを作成してください。</p>';
@@ -508,6 +509,7 @@
     try{
       const snap = await get(ref(db, `deckSets/${nameKey}/decks`));
       const data = snap.exists() ? snap.val() : {};
+      Object.values(data).forEach(deck => registerCustomEffects(deck.customEffects));
       const entries = Object.entries(data);
       if(entries.length === 0){
         listEl.innerHTML = '<p class="ready-note">この名前で保存されたデッキが見つかりません。</p>';
@@ -548,11 +550,12 @@
       flavor: '',
       image: null
     }));
+    const randomPool = EFFECTS_CATALOG.filter(e => !e.template);
     const effectsState = [[],[],[],[]];
     cards.forEach((card, idx) => {
       const attempts = Math.floor(Math.random()*3); // 0〜2個
       for(let a=0; a<attempts; a++){
-        const candidate = randomChoice(EFFECTS_CATALOG);
+        const candidate = randomChoice(randomPool);
         addEffectGeneric(effectsState, idx, candidate.name, card.number, { set textContent(v){} });
       }
     });
