@@ -899,6 +899,24 @@
     padding: 16px;
   }
   .log-panel h3{ font-family: var(--font-display); font-size: 15px; margin: 0 0 12px; color: #5a4a3a; }
+
+  /* ---- 折り畳み可能パネル：見出しクリックで開閉 ---- */
+  .foldable-header{
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+  }
+  .foldable-arrow{
+    font-size: 12px;
+    color: var(--gold);
+    margin-left: 10px;
+    flex-shrink: 0;
+  }
+  .log-panel .foldable-arrow{ color: #8a6d3a; }
+  .foldable-content.folded{ display: none; }
+
   .log-list{ max-height: 480px; overflow-y: auto; display:flex; flex-direction:column; gap: 8px; margin-bottom: 14px; font-size: 13px; }
   .log-item{ border-bottom: 1px dashed #cbb99c; padding-bottom: 6px; color: #2a211c; }
   .log-item-clickable{

@@ -218,13 +218,16 @@
                   </div>
                 </div>
 
-                <div class="dice-area">
-                  <div class="dice-face" id="dice-face">–</div>
-                  <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
-                  <input type="number" id="dice-sides" value="4" min="1" style="width:64px; margin-bottom:0;">
-                  <button class="ghost-btn" id="btn-roll-dice">振る</button>
-                  <input type="text" id="dice-purpose" placeholder="何のためのダイスか（例：毒状態の経過判定）" style="width:220px; margin-bottom:0;">
-                  <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
+                <div id="dice-area-panel">
+                  <h3>汎用ダイス</h3>
+                  <div class="dice-area">
+                    <div class="dice-face" id="dice-face">–</div>
+                    <span style="font-family:var(--font-mono); font-size:12px; color:var(--ink-dim);">1d</span>
+                    <input type="number" id="dice-sides" value="4" min="1" style="width:64px; margin-bottom:0;">
+                    <button class="ghost-btn" id="btn-roll-dice">振る</button>
+                    <input type="text" id="dice-purpose" placeholder="何のためのダイスか（例：毒状態の経過判定）" style="width:220px; margin-bottom:0;">
+                    <span class="dice-note" id="dice-note">効果の判定などに使う汎用ダイスです（先後決定などのシステム内ダイスとは別です）</span>
+                  </div>
                 </div>
               </div>
 
@@ -328,7 +331,7 @@
             <textarea id="judge-memo-textarea" rows="6" placeholder="自分だけのメモ（他の人には見えません。自動で保存されます）" style="width:100%; box-sizing:border-box; resize:vertical;"></textarea>
           </div>
 
-          <div class="log-panel">
+          <div class="log-panel" id="log-panel-wrap">
             <h3>卓上の記録</h3>
             <div class="log-list" id="log-list"></div>
             <div class="log-form">
@@ -472,6 +475,43 @@
     overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
   }
 
+  // ============ 折り畳み可能パネル（見出しをクリックすると中身を開閉する。状態は端末に記憶） ============
+  function initFoldablePanel(panelEl, storageKey, defaultOpen){
+    if(!panelEl) return;
+    const header = panelEl.querySelector(':scope > h3');
+    if(!header || header.dataset.foldInit) return;
+    header.dataset.foldInit = '1';
+
+    // h3より後ろの子要素を全て1つの中身ラッパーにまとめる
+    const contentWrap = document.createElement('div');
+    contentWrap.className = 'foldable-content';
+    const toMove = [];
+    let node = header.nextSibling;
+    while(node){ toMove.push(node); node = node.nextSibling; }
+    toMove.forEach(n => contentWrap.appendChild(n));
+    panelEl.appendChild(contentWrap);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'foldable-arrow';
+    header.appendChild(arrow);
+    header.classList.add('foldable-header');
+
+    let open = defaultOpen;
+    try{
+      const saved = localStorage.getItem(storageKey);
+      if(saved !== null) open = saved === '1';
+    } catch(e){}
+
+    function setOpen(v){
+      open = v;
+      contentWrap.classList.toggle('folded', !open);
+      arrow.textContent = open ? '▾' : '▸';
+      try{ localStorage.setItem(storageKey, open ? '1' : '0'); } catch(e){}
+    }
+    header.addEventListener('click', () => setOpen(!open));
+    setOpen(open);
+  }
+
   // ============ 入室処理 ============
   btnEnter.addEventListener('click', async () => {
     entryError.textContent = '';
@@ -522,6 +562,13 @@
   function initRoomListeners(){
     if(listenersReady) return;
     listenersReady = true;
+
+    // 折り畳み可能パネルの初期化（役割に関わらず全員に効く。表示/非表示自体は別途ロールごとに制御される）
+    initFoldablePanel(document.getElementById('judge-admin-panel'), 'enemion-fold-judge-admin', true);
+    initFoldablePanel(document.getElementById('secret-chat-panel'), 'enemion-fold-secret-chat', true);
+    initFoldablePanel(document.getElementById('judge-memo-panel'), 'enemion-fold-judge-memo', true);
+    initFoldablePanel(document.getElementById('log-panel-wrap'), 'enemion-fold-log', true);
+    initFoldablePanel(document.getElementById('dice-area-panel'), 'enemion-fold-dice', true);
 
     onValue(ref(db, `rooms/${roomId}/members`), (snap) => {
       latestMembers = snap.val() || {};
