@@ -148,6 +148,10 @@
                 <button type="button" class="ghost-btn" id="btn-admin-force-p1-first">プレイヤー1を先手にする</button>
                 <button type="button" class="ghost-btn" id="btn-admin-force-p2-first">プレイヤー2を先手にする</button>
               </div>
+              <div class="judge-admin-row">
+                <span class="ready-note">技能発動が終わらず進行が止まってしまった場合：</span>
+                <button type="button" class="ghost-btn" id="btn-admin-force-judgment">両者が終えていなくても強制的にバトル裁定へ進める</button>
+              </div>
               <div class="judge-admin-lock-wrap">
                 <div>
                   <div class="judge-admin-lock-label" id="admin-lock-label-p1">プレイヤー1のカード</div>
@@ -1731,6 +1735,22 @@
   }
   document.getElementById('btn-admin-force-p1-first').addEventListener('click', () => forceFirstSlot('player1'));
   document.getElementById('btn-admin-force-p2-first').addEventListener('click', () => forceFirstSlot('player2'));
+
+  document.getElementById('btn-admin-force-judgment').addEventListener('click', async () => {
+    if(myRole !== 'judge') return;
+    if(!confirm('両者の技能発動が終わっていなくても、強制的にバトル裁定の段階まで進めます。よろしいですか？')) return;
+    const updates = {
+      skillDone: { player1: true, player2: true },
+      initiativePending: null,
+      diceOffPending: false,
+      diceOff: null
+    };
+    if(!latestBattle.firstSlot){
+      updates.firstSlot = 'player1'; // 先手も未確定だった場合は、便宜的にプレイヤー1を先手とする
+    }
+    await update(ref(db, `rooms/${roomId}/battle`), updates);
+    await push(ref(db, `rooms/${roomId}/log`), { from:'ジャッジ', role:'judge', text:'技能発動の完了を待たず、強制的にバトル裁定の段階まで進めた。', ts: Date.now() });
+  });
 
   function renderPips(id, points){
     const el = document.getElementById(id);
