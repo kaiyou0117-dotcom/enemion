@@ -41,6 +41,7 @@
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <button class="ghost-btn" id="btn-ds-new">＋ 新しいデッキを作る</button>
           <button class="ghost-btn" id="btn-ds-export-all">デッキセットを丸ごと書き出す</button>
+          <button class="ghost-btn" id="btn-ds-import-all">テキストからデッキセットを読み込む</button>
         </div>
       </div>
 
@@ -50,6 +51,7 @@
         <div class="deck-grid" id="deckset-grid"></div>
         <div class="phase-actions">
           <button class="seal-btn" id="btn-ds-save" style="width:auto; padding:12px 22px;">このデッキを保存</button>
+          <button class="ghost-btn" id="btn-ds-import-deck">テキストからこのデッキ全体を読み込む</button>
           <button class="ghost-btn" id="btn-ds-cancel-edit">キャンセル</button>
           <span class="ready-note" id="deckset-error"></span>
         </div>
@@ -60,7 +62,7 @@
 <script type="module">
   import {
     db, ref, set, push, get, remove,
-    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL,
+    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
@@ -87,6 +89,116 @@
       return `【${e.name}】（${e.text}）${e.pt}pt`;
     }).join('\n');
     return `「${card.name || '無題'}」\n数字:（${card.number}）\n種族:（${card.species || ''}）\nタイプ:（${typeLabel}）\n効果:\n${effectsText}\n説明:（${card.flavor || ''}）`;
+  }
+
+  // ============ 読み込み（テンプレ形式のテキスト → カード／デッキ／デッキセット） ============
+
+  // テキストを「「」で始まる箇所」を区切りとしてカード単位のブロックに分割する
+  function splitCardBlocks(text){
+    return text.split(/\n(?=「)/).map(s => s.trim()).filter(Boolean);
+  }
+
+  // カード1枚分のテキストブロックを解析してカードデータに変換する（解析できなければnull）
+  function parseCardBlock(block){
+    const nameMatch = block.match(/「(.*?)」/);
+    if(!nameMatch) return null;
+    const numberMatch = block.match(/数字[:：]\s*[（(](\d+)[）)]/);
+    const speciesMatch = block.match(/種族[:：]\s*[（(](.*?)[）)]/);
+    const typeMatch = block.match(/タイプ[:：]\s*[（(](.*?)[）)]/);
+    const flavorMatch = block.match(/説明[:：]\s*[（(]?([\s\S]*?)[）)]?\s*$/);
+
+    // タイプの表示名（例：防御🟢）から内部コード（例：def）へ逆引きする
+    let typeCode = 'atk';
+    if(typeMatch){
+      const label = typeMatch[1].trim();
+      const strip = (s) => s.replace(/[🔴🔵🟢🟡🟣]/g, '').trim();
+      const found = Object.entries(TYPE_LABEL).find(([, lbl]) => lbl === label || strip(lbl) === strip(label));
+      if(found) typeCode = found[0];
+    }
+
+    // 効果行（【名前】（説明）Npt）を抽出する。カタログ・登録済みカスタム効果のどちらにも無い名前は、
+    // そのテキストからその場でカスタム効果として即席登録し、読み込み後も表示・保存できるようにする。
+    const effectNames = [];
+    const effectLineRe = /【(.*?)】\s*[（(](.*?)[）)]\s*(-?\d+)\s*pt/g;
+    let m;
+    while((m = effectLineRe.exec(block))){
+      const effName = m[1].trim();
+      const effText = m[2].trim();
+      const effPt = parseInt(m[3], 10);
+      if(!effectByName(effName)){
+        registerCustomEffects({ [effName]: { name: effName, pt: effPt, ex: false, category: null, text: effText } });
+      }
+      effectNames.push(effName);
+    }
+
+    return {
+      name: nameMatch[1].trim(),
+      number: numberMatch ? parseInt(numberMatch[1], 10) : 1,
+      species: speciesMatch ? speciesMatch[1].trim() : '',
+      type: typeCode,
+      effectNames,
+      flavor: flavorMatch ? flavorMatch[1].trim() : '',
+      image: null,
+      used: false
+    };
+  }
+
+  // 貼り付けられたテキスト全体を解析する。「#」始まりの見出しがあれば複数デッキ（デッキセット）、
+  // 「」ブロックが複数あれば1つのデッキ、1つだけならカード単体として扱う。
+  function parseImportText(text){
+    if(/^#\s+.+/m.test(text)){
+      const deckBlocks = text.split(/\n(?=#\s+)/).map(s => s.trim()).filter(Boolean);
+      const decks = deckBlocks.map(block => {
+        const titleMatch = block.match(/^#\s+(.*)$/m);
+        const label = titleMatch ? titleMatch[1].trim() : '無題のデッキ';
+        const cardsPart = block.replace(/^#\s+.*$/m, '').trim();
+        const cards = splitCardBlocks(cardsPart).map(parseCardBlock).filter(Boolean);
+        return { label, cards };
+      }).filter(d => d.cards.length > 0);
+      if(decks.length === 0) return null;
+      return { kind: 'deckset', decks };
+    }
+    const cards = splitCardBlocks(text).map(parseCardBlock).filter(Boolean);
+    if(cards.length === 0) return null;
+    if(cards.length === 1) return { kind: 'card', card: cards[0] };
+    return { kind: 'deck', cards };
+  }
+
+  // テキスト貼り付け用の入力モーダル。確定すると onImport(parsed) を呼ぶ。
+  function openImportModal(title, note, onImport){
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(560px,100%);">
+        <div class="picker-header">
+          <span>${escapeHtml(title)}</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div style="padding:16px;">
+          <p class="ready-note" style="margin-bottom:10px;">${escapeHtml(note)}</p>
+          <textarea id="import-text-area" style="width:100%; box-sizing:border-box; min-height:320px; font-family:var(--font-mono); font-size:12px; white-space:pre-wrap;" placeholder="ここにテンプレ形式のテキストを貼り付け"></textarea>
+          <div class="phase-actions" style="margin-top:10px;">
+            <button type="button" class="seal-btn" id="import-confirm-btn" style="width:auto; padding:10px 22px;">読み込む</button>
+            <span class="ready-note" id="import-error-note"></span>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const textarea = overlay.querySelector('#import-text-area');
+    function close(){ overlay.remove(); document.removeEventListener('keydown', onKeydown); }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+    overlay.querySelector('#import-confirm-btn').addEventListener('click', () => {
+      const errNote = overlay.querySelector('#import-error-note');
+      const parsed = parseImportText(textarea.value);
+      if(!parsed){ errNote.textContent = 'テキストを解析できませんでした。テンプレ形式と合っているか確認してください。'; return; }
+      close();
+      onImport(parsed);
+    });
+    textarea.focus();
   }
 
   function openExportModal(title, text){
@@ -217,6 +329,42 @@
     openExportModal(`「${dsNameRaw}」のデッキセットを丸ごと書き出し`, text);
   });
 
+  // 解析中に見つからず即席登録されたカスタム効果だけを拾い出す（カタログ既存分は除く）
+  function collectCustomEffectsForCards(cards){
+    const result = {};
+    cards.forEach(c => (c.effectNames || []).forEach(n => {
+      if(!EFFECTS_CATALOG.find(e => e.name === n)){
+        const eff = effectByName(n);
+        if(eff) result[n] = eff;
+      }
+    }));
+    return result;
+  }
+
+  document.getElementById('btn-ds-import-all').addEventListener('click', () => {
+    openImportModal('デッキセットを読み込む', 'テンプレ形式のテキストを貼り付けてください。「# デッキ名」の見出しごとに1つのデッキとして読み込みます（見出しが無い場合は1つのデッキとして扱います）。既存のデッキは上書きせず、新しいデッキとして追加されます。', async (parsed) => {
+      const decks = parsed.kind === 'deckset' ? parsed.decks
+        : parsed.kind === 'deck' ? [{ label: '無題のデッキ', cards: parsed.cards }]
+        : [{ label: '無題のデッキ', cards: [parsed.card] }];
+      let savedCount = 0;
+      const skipped = [];
+      for(const deck of decks){
+        const cards = deck.cards.slice(0, 4);
+        while(cards.length < 4){ cards.push(emptyCards()[cards.length]); }
+        cards.forEach((c, i) => { c.number = i + 1; c.used = false; });
+        const wideError = validateDeckWide(cards);
+        if(wideError){ skipped.push(`${deck.label}（${wideError}）`); continue; }
+        const customEffects = collectCustomEffectsForCards(cards);
+        await push(ref(db, `deckSets/${dsNameKey}/decks`), { label: deck.label, cards, customEffects, savedAt: Date.now() });
+        savedCount += 1;
+      }
+      await refreshDecksetList();
+      let msg = `${savedCount}件のデッキを読み込みました。`;
+      if(skipped.length > 0){ msg += `\n以下は条件を満たさず読み込めませんでした：\n${skipped.join('\n')}`; }
+      alert(msg);
+    });
+  });
+
   function openDsEditor(id, deck){
     dsEditingId = id;
     dsEditorCards = deck ? JSON.parse(JSON.stringify(deck.cards)) : emptyCards();
@@ -230,6 +378,27 @@
     // renderDsEditor内のsyncCardFieldsFromDomがその古い値を新デッキへ書き戻してしまうため、
     // 先にグリッドを空にしてから描画する。
     document.getElementById('deckset-grid').innerHTML = '';
+    renderDsEditor();
+  }
+
+  // 解析済みのカード1枚分のデータを、指定スロットのフォームへ反映する
+  function applyParsedCardToSlot(idx, card){
+    const grid = document.getElementById('deckset-grid');
+    const setVal = (f, v) => {
+      const el = grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`);
+      if(el) el.value = v;
+    };
+    setVal('name', card.name);
+    setVal('species', card.species);
+    setVal('type', card.type);
+    setVal('flavor', card.flavor);
+    dsEditorEffects[idx] = card.effectNames.slice();
+    card.effectNames.forEach(n => {
+      if(!EFFECTS_CATALOG.find(e => e.name === n)){
+        const eff = effectByName(n);
+        if(eff) dsEditorCustomEffects[n] = eff;
+      }
+    });
     renderDsEditor();
   }
 
@@ -255,14 +424,15 @@
       }
     });
 
-    // カード単体の書き出しボタンを、各カードフォームの末尾に追加する
+    // カード単体の書き出し／読み込みボタンを、各カードフォームの末尾に追加する
     grid.querySelectorAll('.card-form').forEach((formEl, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ghost-btn';
-      btn.style.marginTop = '8px';
-      btn.textContent = 'このカードを書き出す';
-      btn.addEventListener('click', () => {
+      const exportBtn = document.createElement('button');
+      exportBtn.type = 'button';
+      exportBtn.className = 'ghost-btn';
+      exportBtn.style.marginTop = '8px';
+      exportBtn.style.marginRight = '8px';
+      exportBtn.textContent = 'このカードを書き出す';
+      exportBtn.addEventListener('click', () => {
         const get2 = (f) => grid.querySelector(`[data-f="${f}"][data-i="${idx}"]`).value;
         const card = {
           name: get2('name').trim(),
@@ -274,13 +444,34 @@
         };
         openExportModal(`「${card.name || '無題'}」を書き出し`, formatCardExport(card));
       });
-      formEl.appendChild(btn);
+      formEl.appendChild(exportBtn);
+
+      const importBtn = document.createElement('button');
+      importBtn.type = 'button';
+      importBtn.className = 'ghost-btn';
+      importBtn.style.marginTop = '8px';
+      importBtn.textContent = 'テキストから読み込む';
+      importBtn.addEventListener('click', () => {
+        openImportModal('このカードへ読み込む', 'テンプレ形式のテキストを1枚分貼り付けてください。', (parsed) => {
+          const card = parsed.kind === 'card' ? parsed.card : (parsed.kind === 'deck' ? parsed.cards[0] : parsed.decks[0].cards[0]);
+          if(!card){ document.getElementById('deckset-error').textContent = 'カードを読み取れませんでした。'; return; }
+          applyParsedCardToSlot(idx, card);
+        });
+      });
+      formEl.appendChild(importBtn);
     });
   }
 
   document.getElementById('btn-ds-cancel-edit').addEventListener('click', () => {
     document.getElementById('deckset-editor').classList.add('hidden');
     document.getElementById('deckset-list-wrap').classList.remove('hidden');
+  });
+
+  document.getElementById('btn-ds-import-deck').addEventListener('click', () => {
+    openImportModal('このデッキ全体を読み込む', 'テンプレ形式のテキストを、カード4枚分（空行区切り）貼り付けてください。デッキ名見出し（#）付きの場合は最初のデッキを使います。', (parsed) => {
+      const cards = parsed.kind === 'deck' ? parsed.cards : parsed.kind === 'deckset' ? parsed.decks[0].cards : [parsed.card];
+      cards.slice(0, 4).forEach((card, idx) => applyParsedCardToSlot(idx, card));
+    });
   });
 
   document.getElementById('btn-ds-save').addEventListener('click', async () => {

@@ -574,6 +574,12 @@
       registerCustomEffects(latestDecks.player2 && latestDecks.player2.customEffects);
       renderBuildPhase();
       renderOpponentReadyNote();
+      // 「両者準備完了」の判定は、ここ（Firebaseから届いた最新データ）でも都度行う。
+      // ボタンを押した瞬間のローカルキャッシュだけに頼ると、相手側の準備完了がまだ同期されていない
+      // タイミングでは判定を取りこぼし、どちらの操作でも対戦が始まらないことがあるため。
+      if(latestDecks.player1 && latestDecks.player1.ready && latestDecks.player2 && latestDecks.player2.ready){
+        maybeInitBattle();
+      }
     });
 
     onValue(ref(db, `rooms/${roomId}/battle`), (snap) => {
