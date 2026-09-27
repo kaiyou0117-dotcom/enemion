@@ -64,6 +64,34 @@
 
       <div style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
         <input type="text" id="input-effect-search" placeholder="効果名・内容で検索…" style="flex:1; min-width:200px; margin-bottom:0;">
+        <select id="select-effect-sort" style="width:auto; margin-bottom:0;">
+          <option value="pt">並び替え：pt順</option>
+          <option value="kana">並び替え：五十音順</option>
+          <option value="new">並び替え：追加・編集が新しい順</option>
+          <option value="old">並び替え：追加・編集が古い順</option>
+        </select>
+        <select id="select-effect-filter-pt" style="width:auto; margin-bottom:0;">
+          <option value="">pt：すべて</option>
+          <option value="1">1pt</option>
+          <option value="2">2pt</option>
+          <option value="3">3pt</option>
+          <option value="4">4pt</option>
+          <option value="6">6pt</option>
+          <option value="-1">-1pt</option>
+          <option value="-2">-2pt</option>
+        </select>
+        <select id="select-effect-filter-category" style="width:auto; margin-bottom:0;">
+          <option value="">区分：すべて</option>
+          <option value="ability">異能</option>
+          <option value="skill">技能</option>
+          <option value="none">なし（デメリット等）</option>
+          <option value="ex">EX効果のみ</option>
+        </select>
+        <select id="select-effect-filter-origin" style="width:auto; margin-bottom:0;">
+          <option value="">由来：すべて</option>
+          <option value="builtin">既存の効果</option>
+          <option value="admin">追加した効果</option>
+        </select>
         <span class="ready-note" id="effect-count-note"></span>
       </div>
 
@@ -77,6 +105,10 @@
   const listEl = document.getElementById('admin-effect-list');
   const searchInput = document.getElementById('input-effect-search');
   const countNote = document.getElementById('effect-count-note');
+  const sortSelect = document.getElementById('select-effect-sort');
+  const filterPtSelect = document.getElementById('select-effect-filter-pt');
+  const filterCategorySelect = document.getElementById('select-effect-filter-category');
+  const filterOriginSelect = document.getElementById('select-effect-filter-origin');
   let adminItems = {}; // globalEffectsCatalog（新規追加した効果。pushIdがキー）
   let overrideItems = {}; // globalEffectsOverrides（既存効果の上書き編集。sanitizeKey(名前)がキー）
 
@@ -97,18 +129,40 @@
   function buildCombinedList(){
     const builtin = EFFECTS_CATALOG.map(e => {
       const ov = overrideItems[sanitizeKey(e.name)];
-      return { origin: 'builtin', id: sanitizeKey(e.name), ...e, ...(ov || {}), name: e.name, overridden: !!ov };
+      return { origin: 'builtin', id: sanitizeKey(e.name), ...e, ...(ov || {}), name: e.name, overridden: !!ov, ts: ov ? (ov.ts || 0) : 0 };
     });
-    const admin = Object.entries(adminItems).map(([id, e]) => ({ origin: 'admin', id, ...e }));
+    const admin = Object.entries(adminItems).map(([id, e]) => ({ origin: 'admin', id, ...e, ts: e.ts || 0 }));
     return [...builtin, ...admin];
   }
 
   function renderList(){
     const q = searchInput.value.trim();
+    const ptFilter = filterPtSelect.value;
+    const categoryFilter = filterCategorySelect.value;
+    const originFilter = filterOriginSelect.value;
+    const sortMode = sortSelect.value;
+
     const all = buildCombinedList();
-    const entries = all
-      .filter(e => !q || e.name.includes(q) || (e.text || '').includes(q))
-      .sort((a, b) => (a.pt || 0) - (b.pt || 0));
+    let entries = all.filter(e => {
+      if(q && !(e.name.includes(q) || (e.text || '').includes(q))) return false;
+      if(ptFilter !== '' && String(e.pt) !== ptFilter) return false;
+      if(categoryFilter === 'ability' && e.category !== 'ability') return false;
+      if(categoryFilter === 'skill' && e.category !== 'skill') return false;
+      if(categoryFilter === 'none' && e.category) return false;
+      if(categoryFilter === 'ex' && !e.ex) return false;
+      if(originFilter && e.origin !== originFilter) return false;
+      return true;
+    });
+
+    if(sortMode === 'kana'){
+      entries = entries.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    } else if(sortMode === 'new'){
+      entries = entries.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    } else if(sortMode === 'old'){
+      entries = entries.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    } else {
+      entries = entries.sort((a, b) => (a.pt || 0) - (b.pt || 0));
+    }
 
     countNote.textContent = `${entries.length}件（全${all.length}件）`;
 
@@ -150,6 +204,10 @@
     });
   }
   searchInput.addEventListener('input', renderList);
+  sortSelect.addEventListener('change', renderList);
+  filterPtSelect.addEventListener('change', renderList);
+  filterCategorySelect.addEventListener('change', renderList);
+  filterOriginSelect.addEventListener('change', renderList);
 
   function resetForm(){
     document.getElementById('edit-effect-origin').value = '';
@@ -201,14 +259,15 @@
 
     const origin = document.getElementById('edit-effect-origin').value;
     const id = document.getElementById('edit-effect-id').value;
+    const ts = Date.now();
 
     if(origin === 'builtin'){
       // 既存効果の編集：名前をキーに、差分をglobalEffectsOverridesへ保存する
-      await set(ref(db, `globalEffectsOverrides/${id}`), { pt, ex, category, text });
+      await set(ref(db, `globalEffectsOverrides/${id}`), { pt, ex, category, text, ts });
     } else if(id){
-      await set(ref(db, `globalEffectsCatalog/${id}`), { name, pt, ex, category, text });
+      await set(ref(db, `globalEffectsCatalog/${id}`), { name, pt, ex, category, text, ts });
     } else {
-      await push(ref(db, 'globalEffectsCatalog'), { name, pt, ex, category, text });
+      await push(ref(db, 'globalEffectsCatalog'), { name, pt, ex, category, text, ts });
     }
     errEl.textContent = '保存しました。';
     resetForm();
