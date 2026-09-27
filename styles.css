@@ -549,6 +549,27 @@
     color: var(--paper);
     background: rgba(201,162,39,0.15);
   }
+  .picker-toolbar{
+    display:flex;
+    gap: 8px;
+    align-items:center;
+    margin: 10px 18px 0;
+    flex-wrap: wrap;
+  }
+  .picker-toolbar .picker-sort-select{
+    width:auto;
+    margin-bottom:0;
+    font-size: 12px;
+  }
+  .picker-filter-open-btn{
+    font-size: 12px;
+    padding: 6px 14px;
+  }
+  .picker-filter-open-btn.selected{
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(201,162,39,0.12);
+  }
   .picker-grid{
     margin: 14px 18px 18px;
     overflow-y: auto;

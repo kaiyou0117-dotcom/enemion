@@ -105,8 +105,12 @@ export function setOverrides(dict){
   OVERRIDES = dict || {};
 }
 export function getAllEffects(){
-  const base = EFFECTS_CATALOG.map(e => OVERRIDES[e.name] ? { ...e, ...OVERRIDES[e.name], name: e.name } : e);
-  return [...base, ...ADMIN_EFFECTS];
+  const base = EFFECTS_CATALOG.map(e => {
+    const ov = OVERRIDES[e.name];
+    return ov ? { ...e, ...ov, name: e.name, __origin: 'builtin' } : { ...e, __origin: 'builtin' };
+  });
+  const admin = ADMIN_EFFECTS.map(e => ({ ...e, __origin: 'admin' }));
+  return [...base, ...admin];
 }
 
 export function effectByName(name){
@@ -136,14 +140,14 @@ export function buildEffectSelectOptions(){
     }).join('');
   }
 
-// 画面中央にモーダルカードを開き、検索・絞り込みしながら効果を1つ選ばせる。
+// 画面中央にモーダルカードを開き、検索・並び替え・絞り込みしながら効果を1つ選ばせる。
 // 選ばれた効果名を onSelect(name, customDef?) に渡してモーダルを閉じる。
 // constraint（任意）: { category, ptMin, ptMax, excludeEx, excludeTemplates } で候補を絞り込む（サブ効果選択用）。
 // 「異産:名称」等のテンプレート効果（絞り込みなしの通常呼び出し時のみ）をクリックすると、専用の組み立てモーダルを別途開く。
 export function openEffectPickerModal(onSelect, constraint){
     const overlay = document.createElement('div');
     overlay.className = 'picker-overlay';
-    const showFilters = !(constraint && constraint.category);
+    const showExtras = !(constraint && constraint.category); // サブ効果選択（絞り込み済み呼び出し）では並び替え・絞り込みは出さない
     overlay.innerHTML = `
       <div class="picker-modal">
         <div class="picker-header">
@@ -151,12 +155,15 @@ export function openEffectPickerModal(onSelect, constraint){
           <button type="button" class="picker-close" aria-label="閉じる">✕</button>
         </div>
         <input type="text" class="picker-search" placeholder="効果名や内容で検索…">
-        ${showFilters ? `
-        <div class="picker-filters">
-          <button type="button" class="picker-filter-btn selected" data-filter="all">すべて</button>
-          <button type="button" class="picker-filter-btn" data-filter="ability">〈異能〉</button>
-          <button type="button" class="picker-filter-btn" data-filter="skill">〈技能〉</button>
-          <button type="button" class="picker-filter-btn" data-filter="neg">デメリット</button>
+        ${showExtras ? `
+        <div class="picker-toolbar">
+          <select class="picker-sort-select">
+            <option value="pt">並び替え：pt順</option>
+            <option value="kana">並び替え：五十音順</option>
+            <option value="new">並び替え：新しい順</option>
+            <option value="old">並び替え：古い順</option>
+          </select>
+          <button type="button" class="ghost-btn picker-filter-open-btn">絞り込み</button>
         </div>` : ''}
         <div class="picker-grid"></div>
       </div>
@@ -165,14 +172,21 @@ export function openEffectPickerModal(onSelect, constraint){
 
     const grid = overlay.querySelector('.picker-grid');
     const searchInput = overlay.querySelector('.picker-search');
-    let activeFilter = 'all';
+    const sortSelect = overlay.querySelector('.picker-sort-select');
+    const filterOpenBtn = overlay.querySelector('.picker-filter-open-btn');
+    let activeSort = 'pt';
+    let activeFilters = { pt: '', category: '', ex: false, origin: '' };
+
+    function updateFilterBtnLabel(){
+      if(!filterOpenBtn) return;
+      const on = activeFilters.pt || activeFilters.category || activeFilters.ex || activeFilters.origin;
+      filterOpenBtn.textContent = on ? '絞り込み中' : '絞り込み';
+      filterOpenBtn.classList.toggle('selected', !!on);
+    }
 
     function renderGrid(){
       const q = searchInput.value.trim();
-      const filtered = getAllEffects().filter(e => {
-        if(activeFilter === 'ability' && e.category !== 'ability') return false;
-        if(activeFilter === 'skill' && e.category !== 'skill') return false;
-        if(activeFilter === 'neg' && e.pt >= 0) return false;
+      let filtered = getAllEffects().filter(e => {
         if(q && !(e.name.includes(q) || e.text.includes(q))) return false;
         if(constraint){
           if(constraint.category && e.category !== constraint.category) return false;
@@ -181,8 +195,26 @@ export function openEffectPickerModal(onSelect, constraint){
           if(constraint.excludeEx && e.ex) return false;
           if(constraint.excludeTemplates && e.template) return false;
         }
+        if(activeFilters.pt !== '' && String(e.pt) !== activeFilters.pt) return false;
+        if(activeFilters.category === 'ability' && e.category !== 'ability') return false;
+        if(activeFilters.category === 'skill' && e.category !== 'skill') return false;
+        if(activeFilters.category === 'none' && e.category) return false;
+        if(activeFilters.ex && !e.ex) return false;
+        if(activeFilters.origin && e.__origin !== activeFilters.origin) return false;
         return true;
       });
+
+      // 並び替え（安定ソートなので、同条件内の元々の順序＝既存→追加の順は保たれる）
+      if(activeSort === 'kana'){
+        filtered = filtered.slice().sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      } else if(activeSort === 'new'){
+        filtered = filtered.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      } else if(activeSort === 'old'){
+        filtered = filtered.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      } else {
+        filtered = filtered.slice().sort((a, b) => (a.pt || 0) - (b.pt || 0));
+      }
+
       grid.innerHTML = filtered.map(e => `
         <button type="button" class="picker-card" data-name="${escapeHtml(e.name)}">
           <div class="picker-card-head">
@@ -222,17 +254,98 @@ export function openEffectPickerModal(onSelect, constraint){
     overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
     document.addEventListener('keydown', onKeydown);
     searchInput.addEventListener('input', renderGrid);
-    overlay.querySelectorAll('.picker-filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        overlay.querySelectorAll('.picker-filter-btn').forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        activeFilter = btn.dataset.filter;
-        renderGrid();
+    if(sortSelect){
+      sortSelect.addEventListener('change', () => { activeSort = sortSelect.value; renderGrid(); });
+    }
+    if(filterOpenBtn){
+      filterOpenBtn.addEventListener('click', () => {
+        openPickerFilterModal(activeFilters, (next) => {
+          activeFilters = next;
+          updateFilterBtnLabel();
+          renderGrid();
+        });
       });
-    });
+    }
 
     renderGrid();
     searchInput.focus();
+  }
+
+// 「効果を選ぶ」モーダルの絞り込み条件を、画面中央の専用モーダルで選ばせる。
+// 確定すると onApply({ pt, category, ex, origin }) を呼ぶ。
+function openPickerFilterModal(current, onApply){
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+    overlay.innerHTML = `
+      <div class="picker-modal" style="width:min(420px,100%);">
+        <div class="picker-header">
+          <span>効果を絞り込む</span>
+          <button type="button" class="picker-close" aria-label="閉じる">✕</button>
+        </div>
+        <div style="padding:16px;">
+          <label style="font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;">pt</label>
+          <select id="picker-filter-pt" style="width:100%; margin-bottom:12px;">
+            <option value="">すべて</option>
+            <option value="1">1pt</option>
+            <option value="2">2pt</option>
+            <option value="3">3pt</option>
+            <option value="4">4pt</option>
+            <option value="6">6pt</option>
+            <option value="-1">-1pt</option>
+            <option value="-2">-2pt</option>
+          </select>
+          <label style="font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;">区分</label>
+          <select id="picker-filter-category" style="width:100%; margin-bottom:12px;">
+            <option value="">すべて</option>
+            <option value="ability">異能</option>
+            <option value="skill">技能</option>
+            <option value="none">なし（デメリット等）</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:12px;">
+            <input type="checkbox" id="picker-filter-ex" style="width:auto; margin:0;">
+            <span>EX効果のみ</span>
+          </label>
+          <label style="font-size:12px; color:var(--ink-dim); display:block; margin-bottom:4px;">由来</label>
+          <select id="picker-filter-origin" style="width:100%; margin-bottom:16px;">
+            <option value="">すべて</option>
+            <option value="builtin">既存の効果</option>
+            <option value="admin">追加した効果</option>
+          </select>
+          <div class="status-picker-footer" style="justify-content:space-between; margin:0;">
+            <button type="button" class="ghost-btn" id="picker-filter-reset">条件をリセット</button>
+            <button type="button" class="seal-btn" id="picker-filter-apply" style="width:auto; padding:10px 22px;">この条件で絞り込む</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#picker-filter-pt').value = current.pt || '';
+    overlay.querySelector('#picker-filter-category').value = current.category || '';
+    overlay.querySelector('#picker-filter-ex').checked = !!current.ex;
+    overlay.querySelector('#picker-filter-origin').value = current.origin || '';
+
+    function close(){
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e){ if(e.key === 'Escape') close(); }
+    overlay.querySelector('.picker-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if(e.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+
+    overlay.querySelector('#picker-filter-reset').addEventListener('click', () => {
+      onApply({ pt: '', category: '', ex: false, origin: '' });
+      close();
+    });
+    overlay.querySelector('#picker-filter-apply').addEventListener('click', () => {
+      onApply({
+        pt: overlay.querySelector('#picker-filter-pt').value,
+        category: overlay.querySelector('#picker-filter-category').value,
+        ex: overlay.querySelector('#picker-filter-ex').checked,
+        origin: overlay.querySelector('#picker-filter-origin').value
+      });
+      close();
+    });
   }
 
 // テンプレート効果（異産・心領結界・異能極点・結界武装）の名称と組み合わせる効果を決めるモーダル。
