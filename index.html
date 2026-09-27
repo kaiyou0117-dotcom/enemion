@@ -352,7 +352,7 @@
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
     sanitizeKey, escapeHtml, emptyDeck, emptyCards, effectByName,
     ptGroupLabel, buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide, typeAdvantage, registerCustomEffects, showFatalError,
+    addEffectGeneric, validateDeckWide, typeAdvantage, registerCustomEffects, setAdminEffects, showFatalError,
     syncCardFieldsFromDom, resizeImageToDataUrl
   } from './shared.js';
 
@@ -552,6 +552,12 @@
   function initRoomListeners(){
     if(listenersReady) return;
     listenersReady = true;
+
+    // 隠しの効果管理ページ（effects-admin.html）で追加・編集された効果を読み込み、一覧・検索に反映する
+    onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
+      const data = snap.val() || {};
+      setAdminEffects(Object.values(data));
+    });
 
     // 折り畳み可能パネルの初期化（役割に関わらず全員に効く。表示/非表示自体は別途ロールごとに制御される）
     initFoldablePanel(document.getElementById('judge-admin-panel'), 'enemion-fold-judge-admin', true);

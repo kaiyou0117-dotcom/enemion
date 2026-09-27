@@ -258,12 +258,18 @@
 
 <script type="module">
   import {
-    db, ref, get,
-    TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
+    db, ref, get, onValue,
+    TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG, getAllEffects,
     sanitizeKey, escapeHtml, effectByName, emptyCards,
-    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects,
+    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects, setAdminEffects,
     validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
+
+  // 隠しの効果管理ページ（effects-admin.html）で追加・編集された効果を読み込み、一覧・検索に反映する
+  onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
+    const data = snap.val() || {};
+    setAdminEffects(Object.values(data));
+  });
 
   const selectScreen = document.getElementById('select-screen');
   const opponentSetupScreen = document.getElementById('opponent-setup-screen');
@@ -550,7 +556,7 @@
       flavor: '',
       image: null
     }));
-    const randomPool = EFFECTS_CATALOG.filter(e => !e.template);
+    const randomPool = getAllEffects().filter(e => !e.template);
     const effectsState = [[],[],[],[]];
     cards.forEach((card, idx) => {
       const attempts = Math.floor(Math.random()*3); // 0〜2個

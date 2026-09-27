@@ -61,11 +61,17 @@
 
 <script type="module">
   import {
-    db, ref, set, push, get, remove,
-    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG,
+    db, ref, set, push, get, remove, onValue,
+    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG, getAllEffects, setAdminEffects,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
+
+  // 隠しの効果管理ページ（effects-admin.html）で追加・編集された効果を読み込み、一覧・検索に反映する
+  onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
+    const data = snap.val() || {};
+    setAdminEffects(Object.values(data));
+  });
 
   // ============ デッキセット機能 ============
   let dsNameKey = null;
@@ -333,7 +339,7 @@
   function collectCustomEffectsForCards(cards){
     const result = {};
     cards.forEach(c => (c.effectNames || []).forEach(n => {
-      if(!EFFECTS_CATALOG.find(e => e.name === n)){
+      if(!getAllEffects().find(e => e.name === n)){
         const eff = effectByName(n);
         if(eff) result[n] = eff;
       }
@@ -394,7 +400,7 @@
     setVal('flavor', card.flavor);
     dsEditorEffects[idx] = card.effectNames.slice();
     card.effectNames.forEach(n => {
-      if(!EFFECTS_CATALOG.find(e => e.name === n)){
+      if(!getAllEffects().find(e => e.name === n)){
         const eff = effectByName(n);
         if(eff) dsEditorCustomEffects[n] = eff;
       }

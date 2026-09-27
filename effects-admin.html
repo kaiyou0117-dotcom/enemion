@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>効果カタログ管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="fatal-error-banner" class="hidden" style="position:fixed; top:0; left:0; right:0; background:#b23a2e; color:#fff; padding:12px 16px; font-family:'JetBrains Mono',monospace; font-size:12px; z-index:9999; white-space:pre-wrap;"></div>
+
+  <div class="screen">
+    <div class="wrap wrap-wide">
+      <div class="wrap-head">
+        <h2>効果カタログ管理</h2>
+      </div>
+      <p class="ready-note" style="margin-bottom:20px;">
+        ここで追加・編集・削除した効果は、対戦・デッキセット・ひとりでページの効果一覧にそのまま反映されます。<br>
+        このページはナビゲーションからはリンクされていない、URLを知っている人だけが開ける管理用ページです。
+      </p>
+
+      <div id="admin-effect-form" style="background:var(--panel); border:1px solid var(--edge); border-radius:4px; padding:16px; margin-bottom:24px;">
+        <h3 style="font-family:var(--font-display); font-size:16px; color:var(--gold); margin:0 0 12px;" id="form-title">新しい効果を追加</h3>
+        <input type="hidden" id="edit-effect-id">
+
+        <label>効果名</label>
+        <input type="text" id="input-effect-name" placeholder="例：降り注ぐ威光">
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:120px;">
+            <label>pt（マイナスも可）</label>
+            <input type="number" id="input-effect-pt" value="1">
+          </div>
+          <div style="flex:1; min-width:160px;">
+            <label>区分</label>
+            <select id="input-effect-category">
+              <option value="ability">異能</option>
+              <option value="skill">技能</option>
+              <option value="">なし（デメリット効果など）</option>
+            </select>
+          </div>
+        </div>
+
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="input-effect-ex" style="width:auto; margin:0;">
+          <span>EX効果にする</span>
+        </label>
+
+        <label>効果テキスト</label>
+        <textarea id="input-effect-text" rows="3" placeholder="効果の内容を書いてください"></textarea>
+
+        <div class="phase-actions" style="margin-top:12px;">
+          <button type="button" class="seal-btn" id="btn-effect-save" style="width:auto; padding:10px 22px;">保存</button>
+          <button type="button" class="ghost-btn hidden" id="btn-effect-cancel-edit">編集をキャンセル</button>
+          <span class="ready-note" id="effect-form-error"></span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <input type="text" id="input-effect-search" placeholder="効果名・内容で検索…" style="flex:1; min-width:200px; margin-bottom:0;">
+        <span class="ready-note" id="effect-count-note"></span>
+      </div>
+
+      <div id="admin-effect-list"></div>
+    </div>
+  </div>
+
+<script type="module">
+  import { db, ref, get, set, push, remove, onValue, escapeHtml } from './shared.js';
+
+  const listEl = document.getElementById('admin-effect-list');
+  const searchInput = document.getElementById('input-effect-search');
+  const countNote = document.getElementById('effect-count-note');
+  let items = {};
+
+  onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
+    items = snap.val() || {};
+    renderList();
+  });
+
+  function catLabel(category){
+    return category === 'ability' ? '〈異能〉' : category === 'skill' ? '〈技能〉' : '';
+  }
+
+  function renderList(){
+    const q = searchInput.value.trim();
+    const entries = Object.entries(items)
+      .filter(([, e]) => !q || e.name.includes(q) || (e.text || '').includes(q))
+      .sort((a, b) => (a[1].pt || 0) - (b[1].pt || 0));
+
+    countNote.textContent = `${entries.length}件（全${Object.keys(items).length}件）`;
+
+    listEl.innerHTML = entries.map(([id, e]) => `
+      <div class="member-card" style="margin-bottom:10px;">
+        <div class="role-label">${e.pt}pt${e.ex ? '（EX）' : ''}${catLabel(e.category) ? ' ' + catLabel(e.category) : ''}</div>
+        <div class="member-name">${escapeHtml(e.name)}</div>
+        <div class="ready-note" style="margin-top:4px;">${escapeHtml(e.text || '')}</div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button type="button" class="ghost-btn" data-edit="${id}">編集</button>
+          <button type="button" class="ghost-btn" data-delete="${id}">削除</button>
+        </div>
+      </div>
+    `).join('') || '<p class="ready-note">該当する効果がありません。</p>';
+
+    listEl.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => startEdit(btn.dataset.edit));
+    });
+    listEl.querySelectorAll('[data-delete]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const e = items[btn.dataset.delete];
+        if(!confirm(`「${e ? e.name : ''}」を削除しますか？`)) return;
+        await remove(ref(db, `globalEffectsCatalog/${btn.dataset.delete}`));
+      });
+    });
+  }
+  searchInput.addEventListener('input', renderList);
+
+  function resetForm(){
+    document.getElementById('edit-effect-id').value = '';
+    document.getElementById('input-effect-name').value = '';
+    document.getElementById('input-effect-pt').value = '1';
+    document.getElementById('input-effect-ex').checked = false;
+    document.getElementById('input-effect-category').value = 'ability';
+    document.getElementById('input-effect-text').value = '';
+    document.getElementById('form-title').textContent = '新しい効果を追加';
+    document.getElementById('btn-effect-cancel-edit').classList.add('hidden');
+    document.getElementById('effect-form-error').textContent = '';
+  }
+
+  function startEdit(id){
+    const e = items[id];
+    if(!e) return;
+    document.getElementById('edit-effect-id').value = id;
+    document.getElementById('input-effect-name').value = e.name || '';
+    document.getElementById('input-effect-pt').value = e.pt != null ? e.pt : 1;
+    document.getElementById('input-effect-ex').checked = !!e.ex;
+    document.getElementById('input-effect-category').value = e.category || '';
+    document.getElementById('input-effect-text').value = e.text || '';
+    document.getElementById('form-title').textContent = `「${e.name}」を編集`;
+    document.getElementById('btn-effect-cancel-edit').classList.remove('hidden');
+    document.getElementById('effect-form-error').textContent = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  document.getElementById('btn-effect-cancel-edit').addEventListener('click', resetForm);
+
+  document.getElementById('btn-effect-save').addEventListener('click', async () => {
+    const errEl = document.getElementById('effect-form-error');
+    const name = document.getElementById('input-effect-name').value.trim();
+    const ptRaw = document.getElementById('input-effect-pt').value;
+    const pt = parseInt(ptRaw, 10);
+    const ex = document.getElementById('input-effect-ex').checked;
+    const category = document.getElementById('input-effect-category').value || null;
+    const text = document.getElementById('input-effect-text').value.trim();
+
+    if(!name){ errEl.textContent = '効果名を入力してください。'; return; }
+    if(!text){ errEl.textContent = '効果テキストを入力してください。'; return; }
+    if(Number.isNaN(pt)){ errEl.textContent = 'ptは数字で入力してください。'; return; }
+
+    const id = document.getElementById('edit-effect-id').value;
+    const data = { name, pt, ex, category, text };
+
+    if(id){
+      await set(ref(db, `globalEffectsCatalog/${id}`), data);
+    } else {
+      await push(ref(db, 'globalEffectsCatalog'), data);
+    }
+    errEl.textContent = '保存しました。';
+    resetForm();
+  });
+</script>
+</body>
+</html>

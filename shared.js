@@ -89,7 +89,20 @@ export function registerCustomEffects(dict){
   if(!dict) return;
   Object.keys(dict).forEach(k => { CUSTOM_EFFECTS[k] = dict[k]; });
 }
-export function effectByName(name){ return CUSTOM_EFFECTS[name] || EFFECTS_CATALOG.find(e => e.name === name); }
+
+// 隠しの効果管理ページ（effects-admin.html）でFirebaseの globalEffectsCatalog に追加・編集された効果。
+// 各ページの起動時に setAdminEffects で読み込み、コード本体のEFFECTS_CATALOGと合わせて一覧・検索対象にする。
+let ADMIN_EFFECTS = [];
+export function setAdminEffects(list){
+  ADMIN_EFFECTS = Array.isArray(list) ? list : [];
+}
+export function getAllEffects(){
+  return [...EFFECTS_CATALOG, ...ADMIN_EFFECTS];
+}
+
+export function effectByName(name){
+  return CUSTOM_EFFECTS[name] || ADMIN_EFFECTS.find(e => e.name === name) || EFFECTS_CATALOG.find(e => e.name === name);
+}
 
 export function ptGroupLabel(pt){
     if(pt < 0) return `${pt}pt（デメリット）`;
@@ -97,7 +110,7 @@ export function ptGroupLabel(pt){
   }
 export function buildEffectSelectOptions(){
     const groups = {};
-    EFFECTS_CATALOG.forEach(e => {
+    getAllEffects().forEach(e => {
       groups[e.pt] = groups[e.pt] || [];
       groups[e.pt].push(e);
     });
@@ -142,7 +155,7 @@ export function openEffectPickerModal(onSelect, constraint){
 
     function renderGrid(){
       const q = searchInput.value.trim();
-      const filtered = EFFECTS_CATALOG.filter(e => {
+      const filtered = getAllEffects().filter(e => {
         if(activeFilter === 'ability' && e.category !== 'ability') return false;
         if(activeFilter === 'skill' && e.category !== 'skill') return false;
         if(activeFilter === 'neg' && e.pt >= 0) return false;
@@ -169,7 +182,7 @@ export function openEffectPickerModal(onSelect, constraint){
       grid.querySelectorAll('.picker-card').forEach(btn => {
         btn.addEventListener('click', () => {
           const name = btn.dataset.name;
-          const eff = EFFECTS_CATALOG.find(e => e.name === name);
+          const eff = getAllEffects().find(e => e.name === name);
           if(eff && eff.template && !(constraint && constraint.excludeTemplates)){
             // テンプレート効果：名称・組み合わせる効果を別モーダルで決めてから確定する
             openTemplateBuilderModal(eff, (finalName, customDef) => {
