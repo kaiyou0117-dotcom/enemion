@@ -25,6 +25,8 @@
 
       <div id="admin-effect-form" style="background:var(--panel); border:1px solid var(--edge); border-radius:4px; padding:16px; margin-bottom:24px;">
         <h3 style="font-family:var(--font-display); font-size:16px; color:var(--gold); margin:0 0 12px;" id="form-title">新しい効果を追加</h3>
+        <p class="ready-note" id="form-note" style="margin:-6px 0 10px;"></p>
+        <input type="hidden" id="edit-effect-origin">
         <input type="hidden" id="edit-effect-id">
 
         <label>効果名</label>
@@ -70,15 +72,20 @@
   </div>
 
 <script type="module">
-  import { db, ref, get, set, push, remove, onValue, escapeHtml } from './shared.js';
+  import { db, ref, get, set, push, remove, onValue, escapeHtml, sanitizeKey, EFFECTS_CATALOG } from './shared.js';
 
   const listEl = document.getElementById('admin-effect-list');
   const searchInput = document.getElementById('input-effect-search');
   const countNote = document.getElementById('effect-count-note');
-  let items = {};
+  let adminItems = {}; // globalEffectsCatalog（新規追加した効果。pushIdがキー）
+  let overrideItems = {}; // globalEffectsOverrides（既存効果の上書き編集。sanitizeKey(名前)がキー）
 
   onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
-    items = snap.val() || {};
+    adminItems = snap.val() || {};
+    renderList();
+  });
+  onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
+    overrideItems = snap.val() || {};
     renderList();
   });
 
@@ -86,61 +93,92 @@
     return category === 'ability' ? '〈異能〉' : category === 'skill' ? '〈技能〉' : '';
   }
 
+  // 一覧表示用に、コード本体の効果（上書きがあれば反映）＋新規追加した効果を1つのリストにまとめる
+  function buildCombinedList(){
+    const builtin = EFFECTS_CATALOG.map(e => {
+      const ov = overrideItems[sanitizeKey(e.name)];
+      return { origin: 'builtin', id: sanitizeKey(e.name), ...e, ...(ov || {}), name: e.name, overridden: !!ov };
+    });
+    const admin = Object.entries(adminItems).map(([id, e]) => ({ origin: 'admin', id, ...e }));
+    return [...builtin, ...admin];
+  }
+
   function renderList(){
     const q = searchInput.value.trim();
-    const entries = Object.entries(items)
-      .filter(([, e]) => !q || e.name.includes(q) || (e.text || '').includes(q))
-      .sort((a, b) => (a[1].pt || 0) - (b[1].pt || 0));
+    const all = buildCombinedList();
+    const entries = all
+      .filter(e => !q || e.name.includes(q) || (e.text || '').includes(q))
+      .sort((a, b) => (a.pt || 0) - (b.pt || 0));
 
-    countNote.textContent = `${entries.length}件（全${Object.keys(items).length}件）`;
+    countNote.textContent = `${entries.length}件（全${all.length}件）`;
 
-    listEl.innerHTML = entries.map(([id, e]) => `
+    listEl.innerHTML = entries.map(e => `
       <div class="member-card" style="margin-bottom:10px;">
-        <div class="role-label">${e.pt}pt${e.ex ? '（EX）' : ''}${catLabel(e.category) ? ' ' + catLabel(e.category) : ''}</div>
+        <div class="role-label">
+          ${e.pt}pt${e.ex ? '（EX）' : ''}${catLabel(e.category) ? ' ' + catLabel(e.category) : ''}
+          ${e.origin === 'builtin' ? '<span style="opacity:0.6;">・既存</span>' : '<span style="opacity:0.6;">・追加分</span>'}
+          ${e.overridden ? '<span style="color:var(--gold);">・編集済み</span>' : ''}
+        </div>
         <div class="member-name">${escapeHtml(e.name)}</div>
         <div class="ready-note" style="margin-top:4px;">${escapeHtml(e.text || '')}</div>
-        <div style="margin-top:8px; display:flex; gap:8px;">
-          <button type="button" class="ghost-btn" data-edit="${id}">編集</button>
-          <button type="button" class="ghost-btn" data-delete="${id}">削除</button>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="ghost-btn" data-edit="${e.origin}:${e.id}">編集</button>
+          ${e.origin === 'admin' ? `<button type="button" class="ghost-btn" data-delete="${e.id}">削除</button>` : ''}
+          ${e.origin === 'builtin' && e.overridden ? `<button type="button" class="ghost-btn" data-revert="${e.id}">編集を元に戻す</button>` : ''}
         </div>
       </div>
     `).join('') || '<p class="ready-note">該当する効果がありません。</p>';
 
     listEl.querySelectorAll('[data-edit]').forEach(btn => {
-      btn.addEventListener('click', () => startEdit(btn.dataset.edit));
+      btn.addEventListener('click', () => {
+        const [origin, id] = btn.dataset.edit.split(':');
+        startEdit(origin, id);
+      });
     });
     listEl.querySelectorAll('[data-delete]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const e = items[btn.dataset.delete];
+        const e = adminItems[btn.dataset.delete];
         if(!confirm(`「${e ? e.name : ''}」を削除しますか？`)) return;
         await remove(ref(db, `globalEffectsCatalog/${btn.dataset.delete}`));
+      });
+    });
+    listEl.querySelectorAll('[data-revert]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if(!confirm('この効果への編集を取り消し、元の内容に戻しますか？')) return;
+        await remove(ref(db, `globalEffectsOverrides/${btn.dataset.revert}`));
       });
     });
   }
   searchInput.addEventListener('input', renderList);
 
   function resetForm(){
+    document.getElementById('edit-effect-origin').value = '';
     document.getElementById('edit-effect-id').value = '';
     document.getElementById('input-effect-name').value = '';
+    document.getElementById('input-effect-name').disabled = false;
     document.getElementById('input-effect-pt').value = '1';
     document.getElementById('input-effect-ex').checked = false;
     document.getElementById('input-effect-category').value = 'ability';
     document.getElementById('input-effect-text').value = '';
     document.getElementById('form-title').textContent = '新しい効果を追加';
+    document.getElementById('form-note').textContent = '';
     document.getElementById('btn-effect-cancel-edit').classList.add('hidden');
     document.getElementById('effect-form-error').textContent = '';
   }
 
-  function startEdit(id){
-    const e = items[id];
+  function startEdit(origin, id){
+    const e = buildCombinedList().find(x => x.origin === origin && x.id === id);
     if(!e) return;
+    document.getElementById('edit-effect-origin').value = origin;
     document.getElementById('edit-effect-id').value = id;
     document.getElementById('input-effect-name').value = e.name || '';
+    document.getElementById('input-effect-name').disabled = (origin === 'builtin'); // 既存効果は名前で紐付けているため変更不可
     document.getElementById('input-effect-pt').value = e.pt != null ? e.pt : 1;
     document.getElementById('input-effect-ex').checked = !!e.ex;
     document.getElementById('input-effect-category').value = e.category || '';
     document.getElementById('input-effect-text').value = e.text || '';
     document.getElementById('form-title').textContent = `「${e.name}」を編集`;
+    document.getElementById('form-note').textContent = origin === 'builtin' ? 'コード本体にある既存の効果です。名前は変更できません。' : '';
     document.getElementById('btn-effect-cancel-edit').classList.remove('hidden');
     document.getElementById('effect-form-error').textContent = '';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -161,13 +199,16 @@
     if(!text){ errEl.textContent = '効果テキストを入力してください。'; return; }
     if(Number.isNaN(pt)){ errEl.textContent = 'ptは数字で入力してください。'; return; }
 
+    const origin = document.getElementById('edit-effect-origin').value;
     const id = document.getElementById('edit-effect-id').value;
-    const data = { name, pt, ex, category, text };
 
-    if(id){
-      await set(ref(db, `globalEffectsCatalog/${id}`), data);
+    if(origin === 'builtin'){
+      // 既存効果の編集：名前をキーに、差分をglobalEffectsOverridesへ保存する
+      await set(ref(db, `globalEffectsOverrides/${id}`), { pt, ex, category, text });
+    } else if(id){
+      await set(ref(db, `globalEffectsCatalog/${id}`), { name, pt, ex, category, text });
     } else {
-      await push(ref(db, 'globalEffectsCatalog'), data);
+      await push(ref(db, 'globalEffectsCatalog'), { name, pt, ex, category, text });
     }
     errEl.textContent = '保存しました。';
     resetForm();

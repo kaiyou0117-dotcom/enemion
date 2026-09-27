@@ -261,7 +261,7 @@
     db, ref, get, onValue,
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG, getAllEffects,
     sanitizeKey, escapeHtml, effectByName, emptyCards,
-    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects, setAdminEffects,
+    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects, setAdminEffects, setOverrides,
     validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
 
@@ -269,6 +269,9 @@
   onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
     const data = snap.val() || {};
     setAdminEffects(Object.values(data));
+  });
+  onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
+    setOverrides(snap.val() || {});
   });
 
   const selectScreen = document.getElementById('select-screen');

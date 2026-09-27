@@ -96,12 +96,26 @@ let ADMIN_EFFECTS = [];
 export function setAdminEffects(list){
   ADMIN_EFFECTS = Array.isArray(list) ? list : [];
 }
+
+// コード本体（EFFECTS_CATALOG）にある既存効果を、名前をキーに上書き編集した内容。
+// 効果管理ページで「既存の効果」を編集すると、コードそのものは書き換えられないため、
+// ここに差分（pt・EX・区分・テキスト）を保存し、EFFECTS_CATALOGの値の上に重ねて使う。
+let OVERRIDES = {};
+export function setOverrides(dict){
+  OVERRIDES = dict || {};
+}
 export function getAllEffects(){
-  return [...EFFECTS_CATALOG, ...ADMIN_EFFECTS];
+  const base = EFFECTS_CATALOG.map(e => OVERRIDES[e.name] ? { ...e, ...OVERRIDES[e.name], name: e.name } : e);
+  return [...base, ...ADMIN_EFFECTS];
 }
 
 export function effectByName(name){
-  return CUSTOM_EFFECTS[name] || ADMIN_EFFECTS.find(e => e.name === name) || EFFECTS_CATALOG.find(e => e.name === name);
+  if(CUSTOM_EFFECTS[name]) return CUSTOM_EFFECTS[name];
+  const adminMatch = ADMIN_EFFECTS.find(e => e.name === name);
+  if(adminMatch) return adminMatch;
+  const builtIn = EFFECTS_CATALOG.find(e => e.name === name);
+  if(builtIn) return OVERRIDES[name] ? { ...builtIn, ...OVERRIDES[name], name: builtIn.name } : builtIn;
+  return undefined;
 }
 
 export function ptGroupLabel(pt){

@@ -62,7 +62,7 @@
 <script type="module">
   import {
     db, ref, set, push, get, remove, onValue,
-    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG, getAllEffects, setAdminEffects,
+    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG, getAllEffects, setAdminEffects, setOverrides,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
@@ -71,6 +71,9 @@
   onValue(ref(db, 'globalEffectsCatalog'), (snap) => {
     const data = snap.val() || {};
     setAdminEffects(Object.values(data));
+  });
+  onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
+    setOverrides(snap.val() || {});
   });
 
   // ============ デッキセット機能 ============
