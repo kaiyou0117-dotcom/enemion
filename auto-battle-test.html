@@ -1354,12 +1354,11 @@
       if(p1Card._teleported) nextEeP1 -= 1;
       if(p2Card._teleported) nextEeP2 -= 1;
 
-      // テスト用actionsで発動された効果（数字・次ターンEEの補正）を反映する
+      // テスト用actionsで発動された効果のうち、数字の補正はgetBattleCardの時点で既に反映済み（二重加算を避けるためここでは足さない）。
+      // 次ターンEEの補正だけ、ここで追加反映する。
       const adjData = latestBattle.actionAdjustments || {};
       const p1Adj = adjData.player1 || {};
       const p2Adj = adjData.player2 || {};
-      adjP1 += p1Adj.numberDelta || 0;
-      adjP2 += p2Adj.numberDelta || 0;
       nextEeP1 += p1Adj.eeDelta || 0;
       nextEeP2 += p2Adj.eeDelta || 0;
 
@@ -1499,11 +1498,14 @@
     const pick = latestBattle.picks[slot];
     const card = latestDecks[slot].cards[pick.cardIndex];
     const effectiveNumber = getEffectiveNumber(slot, pick.cardIndex);
+    // このターン中に発動された技能（テスト用actions）による数字補正も、実際の表示・裁定に反映する
+    const actionAdj = (latestBattle.actionAdjustments && latestBattle.actionAdjustments[slot] && latestBattle.actionAdjustments[slot].numberDelta) || 0;
+    const finalNumber = Math.max(0, effectiveNumber + actionAdj);
     if(pick.teleportOriginIdx !== null && pick.teleportOriginIdx !== undefined){
       const originCard = latestDecks[slot].cards[pick.teleportOriginIdx];
-      return { ...card, number: effectiveNumber, _teleported: true, _teleportOrigin: originCard };
+      return { ...card, number: finalNumber, _teleported: true, _teleportOrigin: originCard };
     }
-    return { ...card, number: effectiveNumber };
+    return { ...card, number: finalNumber };
   }
 
   // 両者ロック（オープン）の瞬間にEEをまとめて消費する。
