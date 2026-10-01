@@ -176,17 +176,16 @@
         <div class="member-name">${escapeHtml(e.name)}</div>
         <div class="ready-note" style="margin-top:4px;">${escapeHtml(e.text || '')}</div>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="ghost-btn" data-edit="${e.origin}:${e.id}">編集</button>
-          ${e.origin === 'admin' ? `<button type="button" class="ghost-btn" data-delete="${e.id}">削除</button>` : ''}
-          ${e.origin === 'builtin' && e.overridden ? `<button type="button" class="ghost-btn" data-revert="${e.id}">編集を元に戻す</button>` : ''}
+          <button type="button" class="ghost-btn" data-edit-origin="${e.origin}" data-edit-id="${escapeHtml(e.id)}">編集</button>
+          ${e.origin === 'admin' ? `<button type="button" class="ghost-btn" data-delete="${escapeHtml(e.id)}">削除</button>` : ''}
+          ${e.origin === 'builtin' && e.overridden ? `<button type="button" class="ghost-btn" data-revert="${escapeHtml(e.id)}">編集を元に戻す</button>` : ''}
         </div>
       </div>
     `).join('') || '<p class="ready-note">該当する効果がありません。</p>';
 
-    listEl.querySelectorAll('[data-edit]').forEach(btn => {
+    listEl.querySelectorAll('[data-edit-origin]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const [origin, id] = btn.dataset.edit.split(':');
-        startEdit(origin, id);
+        startEdit(btn.dataset.editOrigin, btn.dataset.editId);
       });
     });
     listEl.querySelectorAll('[data-delete]').forEach(btn => {
