@@ -49,9 +49,20 @@
         <div class="role-btn" data-role="watch-only">閲覧のみ（匿名）</div>
       </div>
 
+      <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; margin-top:14px; font-size:12px; line-height:1.5;">
+        <input type="checkbox" id="chk-public-room" style="width:auto; margin:3px 0 0;">
+        <span>この部屋をロビーに公開する（合言葉を知らない人も、一覧から入れる募集部屋になります。チェックしなければ、従来通り合言葉を知っている人だけの非公開部屋です）</span>
+      </label>
+
       <div class="error-note" id="entry-error"></div>
 
       <button class="seal-btn" id="btn-enter">入室</button>
+
+      <div id="lobby-section" style="margin-top:26px; padding-top:18px; border-top:1px dashed var(--edge);">
+        <label>ロビー（公開中の部屋）</label>
+        <p class="ready-note" style="margin-bottom:10px;">部屋を選ぶと、合言葉が上の欄に入ります。名前と役割を決めて「入室」を押してください。</p>
+        <div id="lobby-list"><p class="ready-note">読み込み中…</p></div>
+      </div>
     </div>
   </div>
 
@@ -503,6 +514,70 @@
   }
 
   // ============ 入室処理 ============
+  // ============ ロビー（公開中の部屋の一覧） ============
+  const lobbyListEl = document.getElementById('lobby-list');
+  let lobbyRenderSeq = 0;
+  onValue(ref(db, 'lobby'), async (snap) => {
+    const seq = ++lobbyRenderSeq;
+    const data = snap.val() || {};
+    const entries = Object.entries(data);
+    if(entries.length === 0){
+      lobbyListEl.innerHTML = '<p class="ready-note">現在、公開中の部屋はありません。上で「ロビーに公開する」にチェックして入室すると、ここに載ります。</p>';
+      return;
+    }
+    // 各部屋の現在の参加者を確認する。誰もいなくなった部屋はロビーから自動で外す
+    const rows = await Promise.all(entries.map(async ([key, e]) => {
+      let members = [];
+      try{
+        const mSnap = await get(ref(db, `rooms/${key}/members`));
+        members = mSnap.exists() ? Object.values(mSnap.val()) : [];
+      } catch(err){ /* 読めなければ空扱い */ }
+      return { key, e, members };
+    }));
+    if(seq !== lobbyRenderSeq) return;
+
+    const alive = [];
+    rows.forEach(r => {
+      if(r.members.length === 0){ remove(ref(db, `lobby/${r.key}`)).catch(() => {}); }
+      else alive.push(r);
+    });
+    if(alive.length === 0){
+      lobbyListEl.innerHTML = '<p class="ready-note">現在、公開中の部屋はありません。</p>';
+      return;
+    }
+    alive.sort((a, b) => (b.e.ts || 0) - (a.e.ts || 0));
+
+    lobbyListEl.innerHTML = alive.map(r => {
+      const players = r.members.filter(m => m.slot === 'player1' || m.slot === 'player2');
+      const others = r.members.length - players.length;
+      const full = players.length >= 2;
+      const playerNames = players.map(m => escapeHtml(m.name)).join('・') || '（まだ誰もいません）';
+      return `
+        <div class="member-card" style="margin-bottom:8px; ${full ? 'opacity:0.75;' : ''}">
+          <div class="role-label">${full ? '対戦中（観戦・閲覧のみ可）' : '対戦相手募集中'}　プレイヤー ${players.length}/2${others > 0 ? `・その他 ${others}人` : ''}</div>
+          <div class="member-name">${escapeHtml(r.e.room || r.key)}</div>
+          <div class="ready-note" style="margin-top:2px;">プレイヤー：${playerNames}</div>
+          <div style="margin-top:8px;">
+            <button type="button" class="ghost-btn" data-lobby-room="${escapeHtml(r.e.room || r.key)}" data-lobby-full="${full ? '1' : ''}">この部屋を選ぶ</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    lobbyListEl.querySelectorAll('[data-lobby-room]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        inputRoom.value = btn.dataset.lobbyRoom;
+        document.getElementById('chk-public-room').checked = false; // 既存の公開部屋に入るだけなので、公開設定は不要
+        entryError.textContent = btn.dataset.lobbyFull ? 'この部屋はプレイヤー枠が埋まっています。「観戦」か「閲覧のみ」を選んで入室してください。' : '';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        (inputName.value.trim() ? btnEnter : inputName).focus();
+      });
+    });
+  }, (err) => {
+    lobbyListEl.innerHTML = '<p class="ready-note">ロビーを読み込めませんでした。Firebaseのルールに <code>lobby</code> の読み書き許可が追加されているか確認してください。</p>';
+    console.warn('lobby読み込み失敗:', err);
+  });
+
   btnEnter.addEventListener('click', async () => {
     entryError.textContent = '';
     try{
@@ -537,6 +612,19 @@
       await set(myMemberRef, { name: myName, slot: myRole, avatar: myAvatarDataUrl || null, joinedAt: serverTimestamp() });
       onDisconnect(myMemberRef).remove();
       saveSession();
+
+      // ロビーへの公開（チェック時のみ）。失敗しても入室自体は妨げない
+      if(document.getElementById('chk-public-room').checked){
+        try{
+          const lobbyRef = ref(db, `lobby/${roomId}`);
+          const lobbySnap = await get(lobbyRef);
+          if(!lobbySnap.exists()){
+            await set(lobbyRef, { room: roomRaw, host: myName, ts: Date.now() });
+          }
+        } catch(lobbyErr){
+          console.warn('ロビーへの登録に失敗しました（Firebaseのルールにlobbyの許可が必要です）:', lobbyErr);
+        }
+      }
 
       document.getElementById('match-room-code').textContent = roomRaw;
       document.getElementById('play-room-code').textContent = `合言葉: ${roomRaw}`;
