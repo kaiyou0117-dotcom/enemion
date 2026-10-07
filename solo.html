@@ -261,7 +261,7 @@
     db, ref, get, onValue,
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG, getAllEffects,
     sanitizeKey, escapeHtml, effectByName, emptyCards,
-    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects, setAdminEffects, setOverrides,
+    addEffectGeneric, typeAdvantage, renderCardGrid, registerCustomEffects, setAdminEffects, setOverrides, onEffectsChange,
     validateDeckWide, syncCardFieldsFromDom
   } from './shared.js';
 
@@ -272,6 +272,13 @@
   });
   onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
     setOverrides(snap.val() || {});
+  });
+  // 効果の編集内容が届いたら、表示中の画面も描き直す
+  onEffectsChange(() => {
+    try{
+      if(battleScreen && !battleScreen.classList.contains('hidden')) renderSoloBattle();
+      else if(opponentSetupScreen && !opponentSetupScreen.classList.contains('hidden') && typeof oppEditorCards !== 'undefined' && oppEditorCards) renderOppEditor();
+    } catch(e){ console.warn(e); }
   });
 
   const selectScreen = document.getElementById('select-screen');

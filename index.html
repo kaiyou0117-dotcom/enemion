@@ -363,7 +363,7 @@
     TYPE_LABEL, SPECIES_LIST, EFFECTS_CATALOG,
     sanitizeKey, escapeHtml, emptyDeck, emptyCards, effectByName,
     ptGroupLabel, buildEffectSelectOptions, cardFormHtml, renderCardGrid,
-    addEffectGeneric, validateDeckWide, typeAdvantage, registerCustomEffects, setAdminEffects, setOverrides, showFatalError,
+    addEffectGeneric, validateDeckWide, typeAdvantage, registerCustomEffects, setAdminEffects, setOverrides, onEffectsChange, showFatalError,
     syncCardFieldsFromDom, resizeImageToDataUrl
   } from './shared.js';
 
@@ -661,6 +661,11 @@
     });
     onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
       setOverrides(snap.val() || {});
+    });
+    // 効果の編集内容が届いたら、既に描画済みの編成画面・対戦画面も描き直す
+    onEffectsChange(() => {
+      try{ renderBuildPhase(); } catch(e){ console.warn(e); }
+      try{ renderBattlePhase(); } catch(e){ console.warn(e); }
     });
 
     // 折り畳み可能パネルの初期化（役割に関わらず全員に効く。表示/非表示自体は別途ロールごとに制御される）

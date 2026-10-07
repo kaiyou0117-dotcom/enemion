@@ -62,7 +62,7 @@
 <script type="module">
   import {
     db, ref, set, push, get, remove, onValue,
-    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG, getAllEffects, setAdminEffects, setOverrides,
+    escapeHtml, sanitizeKey, emptyCards, effectByName, TYPE_LABEL, EFFECTS_CATALOG, getAllEffects, setAdminEffects, setOverrides, onEffectsChange,
     buildEffectSelectOptions, cardFormHtml, renderCardGrid,
     addEffectGeneric, validateDeckWide, syncCardFieldsFromDom, registerCustomEffects
   } from './shared.js';
@@ -74,6 +74,11 @@
   });
   onValue(ref(db, 'globalEffectsOverrides'), (snap) => {
     setOverrides(snap.val() || {});
+  });
+  // 効果の編集内容が届いたら、編集中のデッキ画面も描き直す
+  onEffectsChange(() => {
+    const ed = document.getElementById('deckset-editor');
+    if(ed && !ed.classList.contains('hidden') && dsEditorCards){ try{ renderDsEditor(); } catch(e){ console.warn(e); } }
   });
 
   // ============ デッキセット機能 ============
