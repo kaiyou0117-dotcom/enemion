@@ -566,11 +566,24 @@
 
     lobbyListEl.querySelectorAll('[data-lobby-room]').forEach(btn => {
       btn.addEventListener('click', () => {
-        inputRoom.value = btn.dataset.lobbyRoom;
+        const roomName = btn.dataset.lobbyRoom;
+        const isFull = !!btn.dataset.lobbyFull;
+        inputRoom.value = roomName;
         document.getElementById('chk-public-room').checked = false; // 既存の公開部屋に入るだけなので、公開設定は不要
-        entryError.textContent = btn.dataset.lobbyFull ? 'この部屋はプレイヤー枠が埋まっています。「観戦」か「閲覧のみ」を選んで入室してください。' : '';
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        (inputName.value.trim() ? btnEnter : inputName).focus();
+
+        if(!inputName.value.trim()){
+          // 名前が未入力のときは、何が起きたか分かるよう案内を出して名前欄へ移動する
+          entryError.textContent = `部屋「${roomName}」を選びました。名乗る名を入力してから「入室」を押してください。`;
+          inputName.focus();
+          return;
+        }
+        if(isFull && selectedRoleKind === 'player'){
+          entryError.textContent = `部屋「${roomName}」はプレイヤー枠が埋まっています。モードを「観戦」か「閲覧のみ」に変えて、「入室」を押してください。`;
+          return;
+        }
+        // 名前も入力済みで入れる状態なら、そのまま入室する
+        btnEnter.click();
       });
     });
   }, (err) => {
