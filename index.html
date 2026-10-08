@@ -2003,7 +2003,7 @@
     await update(ref(db, `rooms/${roomId}/battle/picks/${myRole}`), pickData);
     if(useFourCount){ await update(ref(db, `rooms/${roomId}/battle/fourCountUsed`), { [myRole]: true }); }
     // EEはここでは消費しない（オープンの瞬間に消費する。セレクト段階でEEの増減が見えると、公開前にカードが推測できてしまうため）
-    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: useFourCount ? `カードを伏せて選んだ（セレクト、4カウント使用）。` : `カードを伏せて選んだ（セレクト）。`, ts: Date.now() });
+    await push(ref(db, `rooms/${roomId}/log`), { from: myName, role: myRole, text: `カードを伏せて選んだ（セレクト）。`, ts: Date.now() }); // 4カウントを使ったかどうかは、相手に伏せるためログに書かない
     myHandSelection = null;
   });
 
